@@ -116,6 +116,45 @@ class Port_Service:
 		self.product = '' if 'product' not in json_data else json_data['product']
 		self.version = '' if 'version' not in json_data else json_data['version']
 
+def out_shodan(shodan):
+	json_data = shodan.get_cache()
+	#print(shodan.get_cache())
+	print("")
+	print("Target: %s" % shodan.settings["Target"])
+	"""
+			    "location": {
+        		"city": "Beijing",
+        		"region_code": null,
+        		"area_code": null,
+        		"longitude": 116.39723,
+        		"country_name": "China",
+        		"country_code": "CN",
+        		"latitude": 39.9075
+        	}
+	"""
+	print("")
+	print("Ports: %s" % ", ".join([str(int) for int in shodan.host_ports])) # convert int to str
+	print("Tags: %s" % ','.join(json_data['tags']))
+	host = Shodan_Host(json_data)
+	print("Host.ip: %s" % host.ip)
+	print("Host.hostnames: %s" % ','.join(host.hostnames))
+	print("Host.country: %s" % host.country)
+	print("Host.city: %s" % host.city)
+	print("Host.geo: %s" % host.geo)
+	print("Host.ISP: %s" % host.isp)
+	print("Host.Org: %s" % host.org)
+	print("Host.Org: %s" % host.org)
+	#print(json_data['data'][0])
+	port_service = Port_Service(json_data['data'][0])
+	print("Host.Service.port: %s/%s - %s # %s" % (port_service.transport.upper(), port_service.port, port_service.product, port_service.version))
+	if "ssh" in port_service._json:
+		print("SSH service")
+		print(json.dumps(port_service._json['ssh'], indent=4, sort_keys=True))
+	for json_port in json_data['data']:
+		port_service = Port_Service(json_port)
+		print("Host.Service.port: %s/%s - %s # %s" % (port_service.transport.upper(), port_service.port, port_service.product, port_service.version))
+		#if "cobalt_strike_beacon" in json_port:
+
 def main(args):
 	#host = "119.45.94.71"
 
@@ -134,44 +173,7 @@ def main(args):
 		#print(shodan.get_cache())
 		#if shodan.cache_data is not None and args.out_data:
 		if shodan.settings['Out_Data']:
-			json_data = shodan.get_cache()
-			#print(shodan.get_cache())
-			print("")
-			print("Target: %s" % shodan.settings["Target"])
-			"""
-			      "location": {
-        				"city": "Beijing",
-        				"region_code": null,
-        				"area_code": null,
-        				"longitude": 116.39723,
-        				"country_name": "China",
-        				"country_code": "CN",
-        				"latitude": 39.9075
-        			}
-			"""
-			print("")
-			print("Ports: %s" % ", ".join([str(int) for int in shodan.host_ports])) # convert int to str
-			print("Tags: %s" % ','.join(json_data['tags']))
-			host = Shodan_Host(json_data)
-			print("Host.ip: %s" % host.ip)
-			print("Host.hostnames: %s" % ','.join(host.hostnames))
-			print("Host.country: %s" % host.country)
-			print("Host.city: %s" % host.city)
-			print("Host.geo: %s" % host.geo)
-			print("Host.ISP: %s" % host.isp)
-			print("Host.Org: %s" % host.org)
-
-			print("Host.Org: %s" % host.org)
-			#print(json_data['data'][0])
-			port_service = Port_Service(json_data['data'][0])
-			print("Host.Service.port: %s/%s - %s # %s" % (port_service.transport.upper(), port_service.port, port_service.product, port_service.version))
-			if "ssh" in port_service._json:
-				print("SSH service")
-				print(json.dumps(port_service._json['ssh'], indent=4, sort_keys=True))
-			for json_port in json_data['data']:
-				port_service = Port_Service(json_port)
-				print("Host.Service.port: %s/%s - %s # %s" % (port_service.transport.upper(), port_service.port, port_service.product, port_service.version))
-				#if "cobalt_strike_beacon" in json_port:
+			out_shodan(shodan)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
