@@ -8,28 +8,41 @@ import argparse
 import json
 import os
 from collections import OrderedDict
+from datetime import datetime
 
 
 class ShodanAPI:
 	def __init__(self):
 		self._init = False
+		self._error_msg = None
 		# Setup the Shodan API connection
 		try:
 			self._api = Shodan(get_api_key())
 			self._init = True
-		except:
-			self._init = False
+		except Exception as e:
+			self._error_msg = e
 
 	@property
 	def is_available(self):
 		return self._init
+	@property
+	def has_error(self):
+		return self._error_msg is not None
+	@property
+	def error_msg(self):
+		if self._error_msg is not None:
+			return self._error_msg
+		return ''
+
+	def _reset_error_msg(self):
+		self._error_msg = None
 
 	def lookup_host_ip(self, host_ip, history=False):
 		data = None
 		try:
 			data = self._api.host(host_ip, history=history)
-		except:
-			pass
+		except Exception as e:
+			self._error_msg = e
 		return data
 
 class ShodanSettings:
@@ -37,13 +50,18 @@ class ShodanSettings:
 		self.settings = OrderedDict()
 		self.settings['Use_Cache'] = False
 		self.settings['Cache_Dir'] = "shodan-data"
+
 		self.settings['Target'] = None
 		self.settings['Fetch_History'] = False
+
 		self.settings['Out_Data'] = False
 		self.settings['Verbose_Enabled'] = False
+
 		self.settings['Out_Service_Data'] = False
 		self.settings['Out_Service_Module'] = False
+
 		self.settings['Match_On_Ports'] = []
+		self.settings['Match_On_Modules'] = []
 		self.settings['Filter_Out_Ports'] = []
 		
 		self.init(args)
@@ -63,6 +81,9 @@ class ShodanSettings:
 		if args.match_on_ports is not None:
 			for port in args.match_on_ports.split(','):
 				self.settings['Match_On_Ports'].append(int(port.strip()))
+		if args.match_on_modules is not None:
+			for module in args.match_on_modules.split(','):
+				self.settings['Match_On_Modules'].append(module.strip())
 		if args.filter_out_ports is not None:
 			for port in args.filter_out_ports.split(','):
 				self.settings['Filter_Out_Ports'].append(int(port.strip()))
@@ -71,11 +92,11 @@ class ShodanEx:
 	def __init__(self, args):
 		self.settings = ShodanSettings(args).settings
 		self.api = ShodanAPI()
-		self.cache_data = None
+		self._cache_data = None
 		self._setup_cache()
 
 	def _setup_cache(self):
-		self.cache_data = None
+		self._cache_data = None
 		if not self.settings['Use_Cache']:
 			return
 
@@ -93,15 +114,14 @@ class ShodanEx:
 	def cache_exists(self):
 		if "Cache_File" not in self.settings:
 			return False
-		#return os.path.isfile(self.settings['Cache_File'])
 		if os.path.isfile(self.settings['Cache_File']):
 			if os.path.getsize(self.settings['Cache_File']) > 0:
 				return True
 		return False
 
 	def get_cache(self):
-		if self.cache_data is not None:
-			return self.cache_data
+		if self._cache_data is not None:
+			return self._cache_data
 		if not self.cache_exists:
 			return None
 
@@ -114,10 +134,12 @@ class ShodanEx:
 			return
 		target = self.settings['Target']
 		fetch_history = self.settings['Fetch_History']
-		self.cache_data = self.api.lookup_host_ip(target, fetch_history)
-		if self.cache_data is not None:
+		self._cache_data = self.api.lookup_host_ip(target, fetch_history)
+		if self.api.has_error:
+			print("[!] shodan api error '%s'" % self.api.error_msg)
+		if self._cache_data is not None:
 			with open(self.settings['Cache_File'], "w") as f:
-				f.write(json.dumps(self.cache_data))
+				f.write(json.dumps(self._cache_data))
 
 	@property
 	def host_ports(self):
@@ -127,21 +149,26 @@ class ShodanEx:
 class Shodan_Host:
 	def __init__(self, json_data):
 		self._json = json_data
-		self.ip = json_data['ip_str']
-		self.asn = '' if 'asn' not in json_data else json_data['asn']
-		self.hostnames = json_data['hostnames']
-		self.domains = json_data['domains']
-		#self.country_code = json_data['country_code']
-		#self.country_name = json_data['country_name']
-		self.country_code = '' if 'country_code' not in json_data else json_data['country_code']
-		self.country_name = '' if 'country_name' not in json_data else json_data['country_name']
-		self.country = "%s - %s" % (json_data['country_code'], json_data['country_name'])
-		self.city = json_data['city']
-		self.longitude = json_data['longitude']
-		self.latitude = json_data['latitude']
-		self.geo = "%s, %s (long, lat)" % (json_data['longitude'], json_data['latitude'])
-		self.isp = json_data['isp']
-		self.org = json_data['org']
+		self.last_update = '' if 'last_update' not in self._json else self._json['last_update']
+		self.ip = self._json['ip_str']
+		self.asn = '' if 'asn' not in self._json else self._json['asn']
+		self.hostnames = self._json['hostnames']
+		self.domains = self._json['domains']
+		self.country_code = '' if 'country_code' not in self._json else self._json['country_code']
+		self.country_name = '' if 'country_name' not in self._json else self._json['country_name']
+		self.country = "%s - %s" % (self._json['country_code'], self._json['country_name'])
+		self.city = self._json['city']
+		self.longitude = self._json['longitude']
+		self.latitude = self._json['latitude']
+		self.geo = "%s, %s (long, lat)" % (self._json['longitude'], self._json['latitude'])
+		self.isp = self._json['isp']
+		self.org = self._json['org']
+		self.services = []
+		for json_port in self._json['data']:
+			self.services.append(Port_Service(json_port))
+
+	def services(self):
+		pass
 
 	def as_location(self):
 		data = ""
@@ -155,45 +182,87 @@ class Shodan_Host:
 class Port_Service:
 	def __init__(self, json_data):
 		self._json = json_data
-		self.port = json_data['port']
-		self.transport = json_data['transport']
-		#self.product = json_data['product']
-		#self.version = json_data['version']
-		self.product = '' if 'product' not in json_data else json_data['product']
-		self.version = '' if 'version' not in json_data else json_data['version']
+		self.port = int(self._json['port'])
+		self.transport = self._json['transport']
+		self.timestamp = '' if 'timestamp' not in self._json else self._json['timestamp']
+		self.scan_date = ''
+		if len(self.timestamp) > 0:
+			self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S.%f")
+		self.product = Service_Product(self._json)
 	
-	def as_string(self):
-		data = "%s/%s" % (self.port, self.transport.upper())
-		if len(self.product) > 0:
-			data = "%s - %s" % (data, self.product)
-			if len(self.version) > 0:
-				data = "%s (%s)" % (data, self.version)
+	@property
+	def banner(self):
+		#data = "%s/%s" % (self.port, self.transport.upper())
+		data = ""
+		if len(self.product.name) > 0:
+			data = self.product.name
+			if len(self.product.version) > 0:
+				data = "%s %s" % (data, self.product.version)
+			if len(self.product.info) > 0:
+				data = "%s (%s)" % (data, self.product.info)
 		return data
-		#return "%s/%s - %s # %s" % (self.transport.upper(), self.port, self.product, self.version)
+	@property
+	def data(self):
+		return self._json['data']
+	@property
+	def has_module(self):
+		if "_shodan" in self._json and "module" in self._json["_shodan"]:
+			return True
+		return False
+	@property
+	def module_name(self):
+		if self.has_module:
+			return self._json["_shodan"]["module"]
+		return None
+	@property
+	def has_module_data(self):
+		if self.get_module_data() is not None:
+			return True
+		return False
+	def get_module_data(self):
+		if not self.has_module:
+			return None
+		module_name = self.module_name
+		if module_name in self._json:
+			return self._json[module_name]
+		elif '-' in self.module_name:
+			module_name = module_name.split('-')[0]
+			if module_name in self._json:
+				return self._json[module_name]
+		return None
+
+	@property
+	def tags(self):
+		if 'tags' in self._json:
+			return self._json['tags']
+		return ''
+class Service_Product:
+	def __init__(self, json_data):
+		self._json = json_data
+		self.name = '' if 'product' not in self._json else self._json['product']
+		self.version = '' if 'version' not in self._json else self._json['version']
+		self.info = '' if 'info' not in self._json else self._json['info']
+
+	def is_cobaltstrike(self):
+		if self.name == "Cobalt Strike Beacon":
+			return True
+		return False
 
 def out_shodan(shodan):
 	json_data = shodan.get_cache()
 
 	#print(shodan.get_cache())
-	print("")
+	print("* Shodan\n %s" % ('-'*30))
 	print("Target: %s" % shodan.settings["Target"])
-	"""
-			    "location": {
-        		"city": "Beijing",
-        		"region_code": null,
-        		"area_code": null,
-        		"longitude": 116.39723,
-        		"country_name": "China",
-        		"country_code": "CN",
-        		"latitude": 39.9075
-        	}
-	"""
-	print("")
+	
 	#print("Tags: %s" % ','.join(json_data['tags']))
 	host = Shodan_Host(json_data)
+	print("Last Update: %s" % host.last_update)
+	print("")
 	print("* Host Overview\n %s" % ('-'*30))
 	print("IP Address: %s" % host.ip)
 	print("Hostnames: %s" % ','.join(host.hostnames))
+	print("Domains: %s" % ','.join(host.domains))
 	print("Ports: %s" % ", ".join([str(int) for int in shodan.host_ports])) # convert int to str
 	print("Location: %s" % host.as_location())
 	print("")
@@ -203,34 +272,40 @@ def out_shodan(shodan):
 	print("")
 	#
 	#print(json_data['data'][0])
-	port_service = Port_Service(json_data['data'][0])
+	#port_service = Port_Service(json_data['data'][0])
 	print("* Service Overview\n %s" % ('-'*30))
-	for json_port in json_data['data']:
-		port_service = Port_Service(json_port)
+	for service in host.services:
 		if len(shodan.settings['Match_On_Ports']) > 0:
-			if int(port_service.port) not in shodan.settings['Match_On_Ports']:
+			if service.port not in shodan.settings['Match_On_Ports']:
 				continue
 		if len(shodan.settings['Filter_Out_Ports']) > 0:
-			if int(port_service.port) in shodan.settings['Filter_Out_Ports']:
+			if service.port in shodan.settings['Filter_Out_Ports']:
 				continue
-		print("* %s " % port_service.as_string())
-		if "ssh" in port_service._json:
-			print("- SSH service present")
+
+		if len(shodan.settings['Match_On_Modules']) > 0:
+			if service.module_name not in shodan.settings['Match_On_Modules']:
+				continue
+
+		service_header = "%s/%s" % (service.port, service.transport.upper())
+		if len(service.banner) > 0:
+			service_header = "%s - %s" % (service_header, service.banner)
+		print(service_header)
+		print("\t- Scanned: %s" % service.scan_date)
+		if len(service.tags) > 0:
+			print("\tTags: %s" % ', '.join(service.tags))
 
 		if shodan.settings['Out_Service_Data']:
-			serv_data = port_service._json['data'].split('\n')
+		#if shodan.settings['Out_Service_Data'] or service.product.is_cobaltstrike:
 			# clean up empty lines & prefix each line with '[*] '
-			serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
+			serv_data = ["[*] %s" % l for l in service.data.split('\n') if len(l) > 0 ]
 			print('\n'.join(serv_data))
 			
 		if shodan.settings['Out_Service_Module']:
-			if "_shodan" in port_service._json and "module" in port_service._json["_shodan"]:
-				serv_module = port_service._json["_shodan"]["module"]
-				if serv_module in port_service._json:
-					serv_data = json.dumps(port_service._json[serv_module], indent=4).split('\n')
-					# clean up empty lines & prefix each line with '[*] '
-					serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
-					print('\n'.join(serv_data))
+			if service.has_module_data:
+				serv_data = json.dumps(service.get_module_data(), indent=4).split('\n')
+				# clean up empty lines & prefix each line with '[*] '
+				serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
+				print('\n'.join(serv_data))
 
 		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
 			print("")
@@ -241,6 +316,9 @@ def main(args):
 
 	shodan = ShodanEx(args)
 	if not shodan.api.is_available:
+		if shodan.api.has_error:
+			print("[!] shodan api error '%s'" % shodan.api.error_msg)
+			shodan.api._reset_error_msg()
 		print("Shodan API not available, please run 'shodan init <api-key>'")
 
 	if shodan.use_cache:
@@ -256,13 +334,11 @@ def main(args):
 			#print('[*] caching data...')
 			print("[*] Retrieving information for target '%s'..." % shodan.settings['Target'])
 			shodan.cache_host_ip()
-		#print(shodan.get_cache())
-		#if shodan.cache_data is not None and args.out_data:
 		if shodan.get_cache() is None:
 			print("[!] No information available for target '%s'" % shodan.settings['Target'])
 			return
-		if shodan.settings['Out_Data']:
-			out_shodan(shodan)
+	if shodan.settings['Out_Data']:
+		out_shodan(shodan)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
@@ -276,6 +352,7 @@ if __name__ == '__main__':
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
 	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
 	parser.add_argument('-mp', '--match-ports', dest='match_on_ports', help='Match on ports, comma separated list')
+	parser.add_argument('-mm', '--match-module', dest='match_on_modules', help='Match on modules, comma separated list')
 	parser.add_argument('-fp', '--filter-ports', dest='filter_out_ports', help='Filter out ports, comma separated list')
 
 	args = parser.parse_args()
