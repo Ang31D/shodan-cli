@@ -145,6 +145,7 @@ class ShodanEx:
 	def host_ports(self):
 		data = self.get_cache()
 		ports = data["ports"]
+		ports.sort()
 		return ports
 class Shodan_Host:
 	def __init__(self, json_data):
@@ -167,9 +168,6 @@ class Shodan_Host:
 		for json_port in self._json['data']:
 			self.services.append(Port_Service(json_port))
 
-	def services(self):
-		pass
-
 	def as_location(self):
 		data = ""
 		
@@ -187,12 +185,12 @@ class Port_Service:
 		self.timestamp = '' if 'timestamp' not in self._json else self._json['timestamp']
 		self.scan_date = ''
 		if len(self.timestamp) > 0:
-			self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S.%f")
+			#self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S.%f")
+			self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d")
 		self.product = Service_Product(self._json)
 	
 	@property
 	def banner(self):
-		#data = "%s/%s" % (self.port, self.transport.upper())
 		data = ""
 		if len(self.product.name) > 0:
 			data = self.product.name
@@ -201,6 +199,11 @@ class Port_Service:
 			if len(self.product.info) > 0:
 				data = "%s (%s)" % (data, self.product.info)
 		return data
+	@property
+	def has_data(self):
+		if len(self._json['data']) > 0:
+			return True
+		return False
 	@property
 	def data(self):
 		return self._json['data']
@@ -232,6 +235,9 @@ class Port_Service:
 		return None
 
 	@property
+	def has_tags(self):
+		return 'tags' in self._json
+	@property
 	def tags(self):
 		if 'tags' in self._json:
 			return self._json['tags']
@@ -259,6 +265,7 @@ def out_shodan(shodan):
 	host = Shodan_Host(json_data)
 	print("Last Update: %s" % host.last_update)
 	print("")
+
 	print("* Host Overview\n %s" % ('-'*30))
 	print("IP Address: %s" % host.ip)
 	print("Hostnames: %s" % ','.join(host.hostnames))
@@ -271,10 +278,11 @@ def out_shodan(shodan):
 	print("ASN: %s" % host.asn)
 	print("")
 	#
-	#print(json_data['data'][0])
-	#port_service = Port_Service(json_data['data'][0])
 	print("* Service Overview\n %s" % ('-'*30))
+	print("Scan-Date\tPort/Prot\tBanner")
+	print("%s\t%s\t%s" % (("-"*len("Scan-date")), ("-"*len("Scan-date")), ("-"*len("Banner"))))
 	for service in host.services:
+		# filter in/out based on port, module-name
 		if len(shodan.settings['Match_On_Ports']) > 0:
 			if service.port not in shodan.settings['Match_On_Ports']:
 				continue
@@ -288,17 +296,17 @@ def out_shodan(shodan):
 
 		service_header = "%s/%s" % (service.port, service.transport.upper())
 		if len(service.banner) > 0:
-			service_header = "%s - %s" % (service_header, service.banner)
-		print(service_header)
-		print("\t- Scanned: %s" % service.scan_date)
-		if len(service.tags) > 0:
-			print("\tTags: %s" % ', '.join(service.tags))
+			service_header = "%s\t\t%s" % (service_header, service.banner)
+		print("%s\t%s" % (service.scan_date, service_header))
+
+		if service.has_tags:
+			print("\t\t\t\tTags: %s" % ', '.join(service.tags))
 
 		if shodan.settings['Out_Service_Data']:
-		#if shodan.settings['Out_Service_Data'] or service.product.is_cobaltstrike:
-			# clean up empty lines & prefix each line with '[*] '
-			serv_data = ["[*] %s" % l for l in service.data.split('\n') if len(l) > 0 ]
-			print('\n'.join(serv_data))
+			if service.has_data:
+				# clean up empty lines & prefix each line with '[*] '
+				serv_data = ["[*] %s" % l for l in service.data.split('\n') if len(l) > 0 ]
+				print('\n'.join(serv_data))
 			
 		if shodan.settings['Out_Service_Module']:
 			if service.has_module_data:
@@ -320,6 +328,7 @@ def main(args):
 			print("[!] shodan api error '%s'" % shodan.api.error_msg)
 			shodan.api._reset_error_msg()
 		print("Shodan API not available, please run 'shodan init <api-key>'")
+		return
 
 	if shodan.use_cache:
 		# re-cache data
