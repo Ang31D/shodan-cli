@@ -452,11 +452,11 @@ if __name__ == '__main__':
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
 	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
-	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
-	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json")
 	parser.add_argument('-mp', '--match-ports', dest='match_on_ports', help='Match on ports, comma separated list')
 	parser.add_argument('-mm', '--match-module', dest='match_on_modules', help='Match on modules, comma separated list')
 	parser.add_argument('-fp', '--filter-ports', dest='filter_out_ports', help='Filter out ports, comma separated list')
+	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
+	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json")
 
 	args = parser.parse_args()
 	main(args)
