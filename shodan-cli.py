@@ -57,8 +57,10 @@ class ShodanSettings:
 		self.settings['Out_Data'] = False
 		self.settings['Verbose_Enabled'] = False
 
+		self.settings['Out_Host_JSON'] = False
 		self.settings['Out_Service_Data'] = False
 		self.settings['Out_Service_Module'] = False
+		self.settings['Out_Service_JSON'] = False
 
 		self.settings['Match_On_Ports'] = []
 		self.settings['Match_On_Modules'] = []
@@ -76,8 +78,10 @@ class ShodanSettings:
 
 		self.settings['Out_Data'] = args.out_data
 		self.settings['Verbose_Enabled'] = args.verbose_mode
+		self.settings['Out_Host_JSON'] = args.out_host_json
 		self.settings['Out_Service_Data'] = args.out_service_data
 		self.settings['Out_Service_Module'] = args.out_service_module
+		self.settings['Out_Service_JSON'] = args.out_service_json
 		if args.match_on_ports is not None:
 			for port in args.match_on_ports.split(','):
 				self.settings['Match_On_Ports'].append(int(port.strip()))
@@ -152,6 +156,7 @@ class Shodan_Host:
 		self._json = json_data
 		self.last_update = '' if 'last_update' not in self._json else self._json['last_update']
 		self.ip = self._json['ip_str']
+		#self.os = 'Unknown' if self._json['os'] is None else self._json['os']
 		self.asn = '' if 'asn' not in self._json else self._json['asn']
 		self.hostnames = self._json['hostnames']
 		self.domains = self._json['domains']
@@ -167,6 +172,49 @@ class Shodan_Host:
 		self.services = []
 		for json_port in self._json['data']:
 			self.services.append(Port_Service(json_port))
+
+	@property
+	def json(self):
+		#// do not return 'data' from json blob
+		data = self._json
+		for item in data:
+			if item == "data":
+				data.pop(item)
+				break
+		data = json.dumps(data, indent=4)
+		return data
+	@property
+	def has_os(self):
+		if 'os' in self._json:
+			if self._json["os"] is not None:
+				return True
+		return False
+	@property
+	def os(self):
+		if self.has_os:
+			return self._json["os"]
+		return ""
+	def get_os_by_services(self):
+		os_list = []
+		for service in self.services:
+			if service.has_os:
+				if service.os in os_list:
+					continue
+				os_list.append(service.os)
+		return os_list
+
+	@property
+	def has_vulns(self):
+		if len(self.vulns) > 0:
+			return True
+		return False
+	@property
+	def vulns(self):
+		if 'vulns' not in self._json:
+			return []
+		data = self._json["vulns"]
+		data.sort()
+		return data
 
 	def as_location(self):
 		data = ""
@@ -233,6 +281,17 @@ class Port_Service:
 			if module_name in self._json:
 				return self._json[module_name]
 		return None
+	@property
+	def has_os(self):
+		if 'os' in self._json:
+			if self._json["os"] is not None:
+				return True
+		return False
+	@property
+	def os(self):
+		if self.has_os:
+			return self._json["os"]
+		return ""
 
 	@property
 	def has_tags(self):
@@ -268,8 +327,14 @@ def out_shodan(shodan):
 
 	print("* Host Overview\n %s" % ('-'*30))
 	print("IP Address: %s" % host.ip)
-	print("Hostnames: %s" % ','.join(host.hostnames))
-	print("Domains: %s" % ','.join(host.domains))
+	if host.has_os:
+		print("OS: %s" % host.os)
+	else:
+		os_list = host.get_os_by_services()
+		if len(os_list) > 0:
+			print("OS: %s - based on services!" % ', '.join(os_list))
+	print("Hostnames: %s" % ', '.join(host.hostnames))
+	print("Domains: %s" % ', '.join(host.domains))
 	print("Ports: %s" % ", ".join([str(int) for int in shodan.host_ports])) # convert int to str
 	print("Location: %s" % host.as_location())
 	print("")
@@ -277,10 +342,19 @@ def out_shodan(shodan):
 	print("Organization: %s" % host.org)
 	print("ASN: %s" % host.asn)
 	print("")
+	if host.has_vulns:
+		print("Vulns: %s" % ', '.join(host.vulns))
+		print("")
 	#
+	
+	if shodan.settings['Out_Host_JSON']:
+		#print(host.json)
+		host_data = ["[*] %s" % l for l in host.json.split('\n') if len(l) > 0 ]
+		print('\n'.join(host_data))
 	print("* Service Overview\n %s" % ('-'*30))
-	print("Scan-Date\tPort/Prot\tBanner")
-	print("%s\t%s\t%s" % (("-"*len("Scan-date")), ("-"*len("Scan-date")), ("-"*len("Banner"))))
+	# // format service headers
+	print("Scan-Date\tPort      Service\tVersion")
+	print("%s\t%s      %s\t%s" % (("-"*len("Scan-date")), ("-"*len("Port")), ("-"*len("Service")), ("-"*len("Service"))))
 	for service in host.services:
 		# filter in/out based on port, module-name
 		if len(shodan.settings['Match_On_Ports']) > 0:
@@ -294,13 +368,25 @@ def out_shodan(shodan):
 			if service.module_name not in shodan.settings['Match_On_Modules']:
 				continue
 
+		# // output service overview
 		service_header = "%s/%s" % (service.port, service.transport.upper())
+		module_name = service.module_name
+		if '-' in module_name:
+			module_name = module_name.split('-')[0]
+		fill_prefix = 1
+		if len(service_header) < 9:
+			fill_prefix = 9 - len(service_header) + 1
+		service_header = "%s%s%s" % (service_header, (" " * fill_prefix), module_name)
 		if len(service.banner) > 0:
-			service_header = "%s\t\t%s" % (service_header, service.banner)
+			if len(module_name) <= 3:
+				service_header = "%s\t" % (service_header)
+			service_header = "%s\t%s" % (service_header, service.banner)
+		elif len(module_name) != len(service.module_name):
+			service_header = "%s\t\t(%s)" % (service_header, service.module_name)
 		print("%s\t%s" % (service.scan_date, service_header))
 
 		if service.has_tags:
-			print("\t\t\t\tTags: %s" % ', '.join(service.tags))
+			print("\t\t\t\t\tTags: %s" % ', '.join(service.tags))
 
 		if shodan.settings['Out_Service_Data']:
 			if service.has_data:
@@ -314,6 +400,12 @@ def out_shodan(shodan):
 				# clean up empty lines & prefix each line with '[*] '
 				serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
 				print('\n'.join(serv_data))
+
+		if shodan.settings['Out_Service_JSON']:
+			serv_data = json.dumps(service._json, indent=4).split('\n')
+			# clean up empty lines & prefix each line with '[*] '
+			serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
+			print('\n'.join(serv_data))
 
 		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
 			print("")
@@ -360,6 +452,8 @@ if __name__ == '__main__':
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
 	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
+	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
+	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json")
 	parser.add_argument('-mp', '--match-ports', dest='match_on_ports', help='Match on ports, comma separated list')
 	parser.add_argument('-mm', '--match-module', dest='match_on_modules', help='Match on modules, comma separated list')
 	parser.add_argument('-fp', '--filter-ports', dest='filter_out_ports', help='Filter out ports, comma separated list')
