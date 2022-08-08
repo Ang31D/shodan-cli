@@ -9,6 +9,7 @@ import json
 import os
 from collections import OrderedDict
 from datetime import datetime
+import io
 
 
 class ShodanAPI:
@@ -313,6 +314,122 @@ class Service_Product:
 			return True
 		return False
 
+class Module_HTTP:
+	def __init__(self, http_service):
+		self.service = http_service
+		self._json = self.service._json
+
+	@property
+	def has_headers(self):
+		if len(self.headers):
+			return True
+		return False
+	def header_exists(self, header_name):
+		if self.has_headers:
+			if header_name in self.headers:
+				return True
+		return False
+	def get_header(self, header_name):
+		if self.header_exists(header_name):
+			return self.headers[header_name]
+		return ''
+	@property
+	def headers(self):
+		status_head, headers_dict = self._create_header_dict(io.StringIO(self.service.data))
+		return headers_dict
+	@property
+	def header_status(self):
+		status_head, headers_dict = self._create_header_dict(io.StringIO(self.service.data))
+		return status_head
+
+	@property
+	def has_ssl_data(self):
+		return 'ssl' in self._json
+	@property
+	def ssl_data(self):
+		if self.has_ssl_data:
+			return self._json['ssl']
+		return None
+
+	@property
+	def jarm(self):
+		if 'https' == self.service.module_name and self.has_ssl_data:
+			if 'jarm' in self.ssl_data:
+				return self.ssl_data['jarm']
+		return None
+	@property
+	def ja3s(self):
+		if 'https' == self.service.module_name and self.has_ssl_data:
+			if 'ja3s' in self.ssl_data:
+				return self.ssl_data['ja3s']
+		return None
+	@property
+	def tls_versions(self):
+		if 'versions' in self.ssl_data:
+			return self.ssl_data['versions']
+		return []
+
+	@property
+	def has_cert(self):
+		if self.has_ssl_data:
+			return 'cert' in self.ssl_data
+		return False
+	@property
+	def cert_issued(self):
+		if 'cert' in self.ssl_data:
+			return datetime.strptime(self.ssl_data['cert']['issued'], '%Y%m%d%H%M%SZ').strftime("%Y-%m-%d %H:%M:%S")
+		return None
+	@property
+	def cert_expires(self):
+		if 'cert' in self.ssl_data:
+			return datetime.strptime(self.ssl_data['cert']['expires'], '%Y%m%d%H%M%SZ').strftime("%Y-%m-%d %H:%M:%S")
+		return None
+	@property
+	def cert_expired(self):
+		if 'cert' in self.ssl_data:
+			return self.ssl_data['cert']['expired']
+		return ''
+	@property
+	def cert_fingerprint(self):
+		if 'cert' in self.ssl_data and 'fingerprint' in self.ssl_data['cert']:
+			return self.ssl_data['cert']['fingerprint']['sha256']
+		return None
+	@property
+	def cert_serial(self):
+		if 'cert' in self.ssl_data and 'serial' in self.ssl_data['cert']:
+			return self.ssl_data['cert']['serial']
+		return None
+	@property
+	def cert_subject_cn(self):
+		if 'cert' in self.ssl_data and 'subject' in self.ssl_data['cert']:
+			return self.ssl_data['cert']['subject']['CN']
+		return None
+	@property
+	def cert_issuer_cn(self):
+		if 'cert' in self.ssl_data and 'issuer' in self.ssl_data['cert']:
+			return self.ssl_data['cert']['issuer']['CN']
+		return None
+
+	def _create_header_dict(self, ioheaders):
+		"""
+		parses an http response into the status-line and headers
+		"""
+		status_head = ioheaders.readline().strip()
+		headers = {}
+		for line in ioheaders:
+			item = line.strip()
+			if not item:
+				break
+			item = item.split(':', 1)
+			if len(item) == 2:
+				key, value = item
+				value = value.strip()
+				# // concat duplicate headers
+				if key in headers:
+					value = "%s; %s" % (headers[key], value)
+				headers[key] = value # remove leading/trailing whitespace
+		return status_head, headers
+
 def out_shodan(shodan):
 	json_data = shodan.get_cache()
 
@@ -353,8 +470,8 @@ def out_shodan(shodan):
 		print('\n'.join(host_data))
 	print("* Service Overview\n %s" % ('-'*30))
 	# // format service headers
-	print("Scan-Date\tPort      Service\tVersion")
-	print("%s\t%s      %s\t%s" % (("-"*len("Scan-date")), ("-"*len("Port")), ("-"*len("Service")), ("-"*len("Service"))))
+	print("Scan-Date\tPort      Service\tVersion / Info")
+	print("%s\t%s      %s\t%s" % (("-"*len("Scan-date")), ("-"*len("Port")), ("-"*len("Service")), ("-"*len("Version / Info"))))
 	for service in host.services:
 		# filter in/out based on port, module-name
 		if len(shodan.settings['Match_On_Ports']) > 0:
@@ -369,24 +486,60 @@ def out_shodan(shodan):
 				continue
 
 		# // output service overview
+		fill_prefix = 1
 		service_header = "%s/%s" % (service.port, service.transport.upper())
 		module_name = service.module_name
 		if '-' in module_name:
 			module_name = module_name.split('-')[0]
-		fill_prefix = 1
 		if len(service_header) < 9:
 			fill_prefix = 9 - len(service_header) + 1
 		service_header = "%s%s%s" % (service_header, (" " * fill_prefix), module_name)
 		if len(service.banner) > 0:
-			if len(module_name) <= 3:
+			if len(module_name) <= 4:
 				service_header = "%s\t" % (service_header)
 			service_header = "%s\t%s" % (service_header, service.banner)
 		elif len(module_name) != len(service.module_name):
 			service_header = "%s\t\t(%s)" % (service_header, service.module_name)
 		print("%s\t%s" % (service.scan_date, service_header))
 
+		fill_prefix = "\t\t\t\t\t"
 		if service.has_tags:
-			print("\t\t\t\t\tTags: %s" % ', '.join(service.tags))
+			print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
+
+		# // HTTP Module
+		if 'https' == service.module_name or 'http' == service.module_name:
+			http_module = Module_HTTP(service)
+			#print(json.dumps(http_module.headers, indent=4))
+			# // try to figure out the http-server
+			http_server = ""
+			if http_module.header_exists("Server"):
+				http_server = http_module.get_header("Server")
+			elif 'ASP.NET' in service.data:
+				http_server = "most likely 'IIS' (found 'ASP.NET' in headers)"
+				#print(json.dumps(http_module.headers, indent=4))
+			if len(http_server) > 0:
+				print("%s# Server: %s" % (fill_prefix, http_server))
+
+			# // output SSL Certificate information
+			if 'https' == service.module_name and http_module.has_ssl_data:
+				if http_module.jarm is not None:
+					print('%sjarm: %s' % (fill_prefix, http_module.jarm))
+				if http_module.ja3s is not None:
+					print('%sja3s: %s' % (fill_prefix, http_module.ja3s))
+				if len(http_module.tls_versions) > 0:
+					print('%sTLS-Versions: %s' % (fill_prefix, ', '.join(http_module.tls_versions)))
+				if http_module.has_cert:
+					print('%sSSL Certificate' % fill_prefix)
+					print('%s   Issued: %s, Expires: %s (Expired: %s)' % (fill_prefix, http_module.cert_issued, http_module.cert_expires, http_module.cert_expired))
+					if http_module.cert_fingerprint is not None:
+						print('%s   Fingerprint: %s' % (fill_prefix, http_module.cert_fingerprint))
+					if http_module.cert_serial is not None:
+						print('%s   Serial: %s' % (fill_prefix, http_module.cert_serial))
+					if http_module.cert_subject_cn is not None:
+						print('%s   Subject.CN: %s' % (fill_prefix, http_module.cert_subject_cn))
+					if http_module.cert_issuer_cn is not None:
+						print('%s   Issuer.CN: %s' % (fill_prefix, http_module.cert_issuer_cn))
+				
 
 		if shodan.settings['Out_Service_Data']:
 			if service.has_data:
@@ -415,6 +568,21 @@ def main(args):
 	#host = "119.45.94.71"
 
 	shodan = ShodanEx(args)
+
+	if args.list_cache:
+		dir_list = os.listdir(shodan.settings['Cache_Dir'])
+		for file in dir_list:
+			if file.startswith("host.") and file.endswith(".json"):
+				print('.'.join(file.split('.')[1:5]))
+		return
+
+	if args.flush_cache:
+		dir_list = os.listdir(shodan.settings['Cache_Dir'])
+		for file in dir_list:
+			cache_file = os.path.join(shodan.settings['Cache_Dir'], file)
+			os.remove(cache_file)
+		return
+
 	if not shodan.api.is_available:
 		if shodan.api.has_error:
 			print("[!] shodan api error '%s'" % shodan.api.error_msg)
@@ -447,6 +615,8 @@ if __name__ == '__main__':
 	parser.add_argument('-t', dest='target', required=True, help='Host or IP address of the target to lookup')
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
 	parser.add_argument('-C', '--cache-dir', dest='cache_dir', default='shodan-data', help="store cache to directory, default 'shodan-data'")
+	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts")
+	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history")
 	parser.add_argument('-H', '--history', dest='fetch_history', action='store_true', help="Fetch host history")
 	parser.add_argument('-O', '--out-data', dest='out_data', action='store_true', help="Output data to console")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
