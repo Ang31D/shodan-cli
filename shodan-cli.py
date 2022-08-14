@@ -8,8 +8,12 @@ import argparse
 import json
 import os
 from collections import OrderedDict
-from datetime import datetime
+from datetime import datetime, date
+from dateutil import relativedelta
 import io
+from operator import attrgetter
+from ipaddress import ip_address
+import socket
 
 
 class ShodanAPI:
@@ -38,7 +42,16 @@ class ShodanAPI:
 	def _reset_error_msg(self):
 		self._error_msg = None
 
-	def lookup_host_ip(self, host_ip, history=False):
+	def info(self):
+		data = None
+		try:
+			data = self._api.info()
+		except Exception as e:
+			self._error_msg = e
+		return data
+
+	# // host doe not cost any credit by query
+	def host(self, host_ip, history=False):
 		data = None
 		try:
 			data = self._api.host(host_ip, history=history)
@@ -46,17 +59,28 @@ class ShodanAPI:
 			self._error_msg = e
 		return data
 
+	# // domain_info costs 1 credit by query
+	def domain_info(self, domain, history=False, type="A"):
+		data = None
+		try:
+			data = self._api.dns.domain_info(domain, history=history, type=type)
+		except Exception as e:
+			self._error_msg = e
+		return data
+
 class ShodanSettings:
 	def __init__(self, args):
 		self.settings = OrderedDict()
-		self.settings['Use_Cache'] = False
+		#self.settings['Cache'] = False
+		self.settings['Cache'] = True
 		self.settings['Cache_Dir'] = "shodan-data"
+		self.settings['Flush_Cache'] = False
 
 		self.settings['Target'] = None
-		self.settings['Fetch_History'] = False
+		self.settings['Include_History'] = False
 
 		self.settings['Out_Data'] = False
-		self.settings['Verbose_Enabled'] = False
+		self.settings['Verbose_Mode'] = False
 
 		self.settings['Out_Host_JSON'] = False
 		self.settings['Out_Service_Data'] = False
@@ -70,15 +94,16 @@ class ShodanSettings:
 		self.init(args)
 
 	def init(self, args):
-		self.settings['Use_Cache'] = args.cache
+		#self.settings['Cache'] = args.cache
 		if args.cache_dir is not None:
 			self.settings['Cache_Dir'] = args.cache_dir
+		self.settings['Flush_Cache'] = args.flush_cache
 
 		self.settings['Target'] = args.target
-		self.settings['Fetch_History'] = args.fetch_history
+		self.settings['Include_History'] = args.include_history
 
 		self.settings['Out_Data'] = args.out_data
-		self.settings['Verbose_Enabled'] = args.verbose_mode
+		self.settings['Verbose_Mode'] = args.verbose_mode
 		self.settings['Out_Host_JSON'] = args.out_host_json
 		self.settings['Out_Service_Data'] = args.out_service_data
 		self.settings['Out_Service_Module'] = args.out_service_module
@@ -102,19 +127,28 @@ class ShodanEx:
 
 	def _setup_cache(self):
 		self._cache_data = None
-		if not self.settings['Use_Cache']:
+		if not self.settings['Cache']:
 			return
 
 		if not os.path.isdir(self.settings['Cache_Dir']):
 			os.mkdir(self.settings['Cache_Dir'])
 
-		out_file = "host.%s.json" % self.settings['Target']
-		cache_file = os.path.join(self.settings['Cache_Dir'], out_file)
+		out_file = self._target_as_out_file(self.settings['Target'])
+		cache_file = self._get_out_path(out_file)
 		self.settings['Cache_File'] = cache_file
+
+	def _target_as_out_file(self, target):
+		return "host.%s.json" % target
+	def _out_file_as_target(self, file):
+		if file.startswith("host.") and file.endswith(".json"):
+			return '.'.join(file.split('.')[1:5])
+		return ''
+	def _get_out_path(self, file):
+		return os.path.join(self.settings['Cache_Dir'], file)
 
 	@property
 	def use_cache(self):
-		return self.settings["Use_Cache"]
+		return self.settings["Cache"]
 	@property
 	def cache_exists(self):
 		if "Cache_File" not in self.settings:
@@ -124,43 +158,93 @@ class ShodanEx:
 				return True
 		return False
 
+	def _get_latest_per_port(self):
+		ports = OrderedDict()
+		service_ports = OrderedDict()
+		_json = self.get_cache()
+		services = []
+		for port_json in _json['data']:
+			port = int(port_json['port'])
+			if port not in ports:
+				service_ports[port] = []
+			service_ports[port].append(Port_Service(port_json))
+
+		for port in service_ports: # sort by timestamp by grouped ports
+			service_ports[port] = sorted(service_ports[port], key=attrgetter('timestamp')) # sort by timestamp
+		sorted_ports = sorted(service_ports)
+		for port in sorted_ports:
+			for service in service_ports[port]:
+				print("%s port: %s" % (service.timestamp, service.port))
+		print("")
+		for port in sorted_ports:
+			service_first_scan = service_ports[port][0]
+			service_last_scan = service_ports[port][-1]
+			print("port: %s - first-seen: %s, last-seen: %s" % (port, service_first_scan.timestamp, service_last_scan.timestamp))
+
 	def get_cache(self):
 		if self._cache_data is not None:
 			return self._cache_data
 		if not self.cache_exists:
 			return None
-
-		json_data = None
-		with open(self.settings['Cache_File'], 'r') as f:
-			json_data = json.load(f)
-		return json_data
-	def cache_host_ip(self):
+		return self.get_cache_by_file(self.settings['Cache_File'])
+	def get_cache_by_file(self, file):
+		if os.path.isfile(file):
+			with open(file, 'r') as f:
+				return json.load(f)
+		return None
+	def cache_host(self):
 		if "Cache_File" not in self.settings:
 			return
 		target = self.settings['Target']
-		fetch_history = self.settings['Fetch_History']
-		self._cache_data = self.api.lookup_host_ip(target, fetch_history)
+		include_history = self.settings['Include_History']
+		self.cache_host_ip(target, include_history)
+	def cache_host_ip(self, target, include_history):
+		self._cache_data = self.api.host(target, include_history)
 		if self.api.has_error:
 			print("[!] shodan api error '%s'" % self.api.error_msg)
+			self.api._reset_error_msg()
 		if self._cache_data is not None:
-			with open(self.settings['Cache_File'], "w") as f:
+			cache_file = self._get_out_path(self._target_as_out_file(target))
+			with open(cache_file, "w") as f:
 				f.write(json.dumps(self._cache_data))
 
-	@property
-	def host_ports(self):
-		data = self.get_cache()
-		ports = data["ports"]
-		ports.sort()
-		return ports
-class Shodan_Host:
+	def _target_is_ip_address(self, target):
+		try:
+			ip = ip_address(target)
+			return True
+		except ValueError:
+			return False
+	def _target_is_cache_index(self, target):
+		if not target.isnumeric():
+			return False
+		dir_list = os.listdir(self.settings['Cache_Dir'])
+		if len(dir_list) == 0:
+			return False
+		if int(target) < 0 or int(target) >= len(dir_list):
+			return False
+		return True
+	def _target_is_cached(self, target):
+		dir_list = os.listdir(self.settings['Cache_Dir'])
+		for file in dir_list:
+			if not file.startswith("host.") or not file.endswith(".json"):
+				continue
+			if target == self._out_file_as_target(file):
+				return True
+		return False
+	def _get_target_by_cache_index(self, cache_index):
+		target = None
+		if not self._target_is_cache_index(cache_index):
+			return target
+		dir_list = os.listdir(self.settings['Cache_Dir'])
+		if int(cache_index) < 0 or int(cache_index) >= len(dir_list):
+			return target
+		cache_file = dir_list[int(cache_index)]
+		target = self._out_file_as_target(cache_file)
+		return target
+
+class Location:
 	def __init__(self, json_data):
 		self._json = json_data
-		self.last_update = '' if 'last_update' not in self._json else self._json['last_update']
-		self.ip = self._json['ip_str']
-		#self.os = 'Unknown' if self._json['os'] is None else self._json['os']
-		self.asn = '' if 'asn' not in self._json else self._json['asn']
-		self.hostnames = self._json['hostnames']
-		self.domains = self._json['domains']
 		self.country_code = '' if 'country_code' not in self._json else self._json['country_code']
 		self.country_name = '' if 'country_name' not in self._json else self._json['country_name']
 		self.country = "%s - %s" % (self._json['country_code'], self._json['country_name'])
@@ -168,11 +252,53 @@ class Shodan_Host:
 		self.longitude = self._json['longitude']
 		self.latitude = self._json['latitude']
 		self.geo = "%s, %s (long, lat)" % (self._json['longitude'], self._json['latitude'])
+
+	def as_string(self):
+		data = ""
+		
+		#self.region_code
+		data = "%s (%s), %s" % (self.country_name, self.country_code, self.city)
+		data = "%s # long: %s, lat: %s" % (data, self.longitude,self.latitude)
+		return data
+class Shodan_Host:
+	def __init__(self, json_data, include_history):
+		self._json = json_data
+		self.last_update = '' if 'last_update' not in self._json else self._json['last_update']
+		self.ip = self._json['ip_str']
+		self.asn = '' if 'asn' not in self._json else self._json['asn']
+		self.hostnames = self._json['hostnames']
+		self.domains = self._json['domains']
+		self.location = Location(self._json)
 		self.isp = self._json['isp']
 		self.org = self._json['org']
 		self.services = []
-		for json_port in self._json['data']:
-			self.services.append(Port_Service(json_port))
+		self._init_services(include_history)
+
+	def _init_services(self, include_history):
+		service_ports = OrderedDict()
+		for port_json in self._json['data']:
+			port = int(port_json['port'])
+			if port not in service_ports:
+				service_ports[port] = []
+			service_ports[port].append(Port_Service(port_json))
+
+		for port in service_ports: # sort by timestamp by grouped ports
+			service_ports[port] = sorted(service_ports[port], key=attrgetter('timestamp')) # sort by timestamp
+
+		sorted_ports = sorted(service_ports)
+		if include_history:
+			for port in sorted_ports:
+				first_seen_date = service_ports[port][0].timestamp
+				for service in service_ports[port]:
+					service.first_seen = first_seen_date
+					self.services.append(service)
+		else:
+			for port in sorted_ports:
+				service_first_scan = service_ports[port][0]
+				service_last_scan = service_ports[port][-1]
+				first_seen_date = datetime.strptime(service_first_scan.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+				service_last_scan.first_seen = first_seen_date
+				self.services.append(service_last_scan)
 
 	@property
 	def json(self):
@@ -224,6 +350,12 @@ class Shodan_Host:
 		data = "%s (%s), %s" % (self.country_name, self.country_code, self.city)
 		data = "%s # long: %s, lat: %s" % (data, self.longitude,self.latitude)
 		return data
+
+	@property
+	def host_ports(self):
+		ports = self._json["ports"]
+		ports.sort()
+		return ports
 		
 		
 class Port_Service:
@@ -237,6 +369,7 @@ class Port_Service:
 			#self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S.%f")
 			self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d")
 		self.product = Service_Product(self._json)
+		self.first_seen = ''
 	
 	@property
 	def banner(self):
@@ -313,6 +446,35 @@ class Service_Product:
 		if self.name == "Cobalt Strike Beacon":
 			return True
 		return False
+
+class Module_SSH:
+	def __init__(self, ssh_service):
+		self.service = ssh_service
+		self._json = self.service._json
+
+	@property
+	def hassh(self):
+		if self.service.get_module_data() is not None:
+			data = self.service.get_module_data()
+			if 'hassh' in data:
+				return data['hassh']
+		return None
+	
+	@property
+	def fingerprint(self):
+		if self.service.get_module_data() is not None:
+			data = self.service.get_module_data()
+			if 'fingerprint' in data:
+				return data['fingerprint']
+		return None
+	
+	@property
+	def type(self):
+		if self.service.get_module_data() is not None:
+			data = self.service.get_module_data()
+			if 'type' in data:
+				return data['type']
+		return None
 
 class Module_HTTP:
 	def __init__(self, http_service):
@@ -433,12 +595,10 @@ class Module_HTTP:
 def out_shodan(shodan):
 	json_data = shodan.get_cache()
 
-	#print(shodan.get_cache())
 	print("* Shodan\n %s" % ('-'*30))
 	print("Target: %s" % shodan.settings["Target"])
 	
-	#print("Tags: %s" % ','.join(json_data['tags']))
-	host = Shodan_Host(json_data)
+	host = Shodan_Host(json_data, shodan.settings['Include_History'])
 	print("Last Update: %s" % host.last_update)
 	print("")
 
@@ -452,8 +612,8 @@ def out_shodan(shodan):
 			print("OS: %s - based on services!" % ', '.join(os_list))
 	print("Hostnames: %s" % ', '.join(host.hostnames))
 	print("Domains: %s" % ', '.join(host.domains))
-	print("Ports: %s" % ", ".join([str(int) for int in shodan.host_ports])) # convert int to str
-	print("Location: %s" % host.as_location())
+	print("Ports: %s" % ", ".join([str(int) for int in host.host_ports])) # convert int to str
+	print("Location: %s" % host.location.as_string())
 	print("")
 	print("ISP: %s" % host.isp)
 	print("Organization: %s" % host.org)
@@ -465,7 +625,6 @@ def out_shodan(shodan):
 	#
 	
 	if shodan.settings['Out_Host_JSON']:
-		#print(host.json)
 		host_data = ["[*] %s" % l for l in host.json.split('\n') if len(l) > 0 ]
 		print('\n'.join(host_data))
 	print("* Service Overview\n %s" % ('-'*30))
@@ -482,7 +641,10 @@ def out_shodan(shodan):
 				continue
 
 		if len(shodan.settings['Match_On_Modules']) > 0:
-			if service.module_name not in shodan.settings['Match_On_Modules']:
+			module_name = service.module_name
+			if '-' in module_name:
+				module_name = module_name.split('-')[0]
+			if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
 				continue
 
 		# // output service overview
@@ -502,43 +664,64 @@ def out_shodan(shodan):
 			service_header = "%s\t\t(%s)" % (service_header, service.module_name)
 		print("%s\t%s" % (service.scan_date, service_header))
 
-		fill_prefix = "\t\t\t\t\t"
-		if service.has_tags:
-			print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
-
-		# // HTTP Module
-		if 'https' == service.module_name or 'http' == service.module_name:
-			http_module = Module_HTTP(service)
-			#print(json.dumps(http_module.headers, indent=4))
-			# // try to figure out the http-server
-			http_server = ""
-			if http_module.header_exists("Server"):
-				http_server = http_module.get_header("Server")
-			elif 'ASP.NET' in service.data:
-				http_server = "most likely 'IIS' (found 'ASP.NET' in headers)"
-				#print(json.dumps(http_module.headers, indent=4))
-			if len(http_server) > 0:
-				print("%s# Server: %s" % (fill_prefix, http_server))
-
-			# // output SSL Certificate information
-			if 'https' == service.module_name and http_module.has_ssl_data:
-				if http_module.jarm is not None:
-					print('%sjarm: %s' % (fill_prefix, http_module.jarm))
-				if http_module.ja3s is not None:
-					print('%sja3s: %s' % (fill_prefix, http_module.ja3s))
-				if len(http_module.tls_versions) > 0:
-					print('%sTLS-Versions: %s' % (fill_prefix, ', '.join(http_module.tls_versions)))
-				if http_module.has_cert:
-					print('%sSSL Certificate' % fill_prefix)
-					print('%s   Issued: %s, Expires: %s (Expired: %s)' % (fill_prefix, http_module.cert_issued, http_module.cert_expires, http_module.cert_expired))
-					if http_module.cert_fingerprint is not None:
-						print('%s   Fingerprint: %s' % (fill_prefix, http_module.cert_fingerprint))
-					if http_module.cert_serial is not None:
-						print('%s   Serial: %s' % (fill_prefix, http_module.cert_serial))
-					if http_module.cert_subject_cn is not None:
-						print('%s   Subject.CN: %s' % (fill_prefix, http_module.cert_subject_cn))
-					if http_module.cert_issuer_cn is not None:
-						print('%s   Issuer.CN: %s' % (fill_prefix, http_module.cert_issuer_cn))
+		if shodan.settings['Verbose_Mode']:
+			fill_prefix = "\t\t\t\t\t"
+			print("%sFirst Seen: %s" % (fill_prefix, service.first_seen))
+			if service.has_tags:
+				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
+			# // HTTP Module
+			if 'https' == service.module_name or 'http' == service.module_name:
+				http_module = Module_HTTP(service)
+				# // try to figure out the http-server
+				http_server = ""
+				if http_module.header_exists("Server"):
+					http_server = http_module.get_header("Server")
+				elif 'ASP.NET' in service.data:
+					http_server = "most likely 'IIS' (found 'ASP.NET' in headers)"
+				if len(http_server) > 0:
+					print("%s# 'Server' header: %s" % (fill_prefix, http_server))
+				# // info from module data
+				module_data = service.get_module_data()
+				if module_data is not None:
+					print('%sWEB Info' % fill_prefix)
+					if 'title' in module_data and module_data['title'] is not None:
+						print("%s   page title: %s" % (fill_prefix, module_data['title']))
+					if 'headers_hash' in module_data and module_data['headers_hash'] is not None:
+						print("%s   headers hash: %s" % (fill_prefix, module_data['headers_hash']))
+					if 'html_hash' in module_data and module_data['html_hash'] is not None:
+						print("%s   html hash: %s" % (fill_prefix, module_data['html_hash']))
+	
+				# // output SSL Certificate information
+				if 'https' == service.module_name and http_module.has_ssl_data:
+					if http_module.jarm is not None:
+						print('%sjarm: %s' % (fill_prefix, http_module.jarm))
+					if http_module.ja3s is not None:
+						print('%sja3s: %s' % (fill_prefix, http_module.ja3s))
+					if len(http_module.tls_versions) > 0:
+						print('%sTLS-Versions: %s' % (fill_prefix, ', '.join(http_module.tls_versions)))
+					if http_module.has_cert:
+						print('%sSSL Certificate' % fill_prefix)
+						print('%s   Issued: %s, Expires: %s (Expired: %s)' % (fill_prefix, http_module.cert_issued, http_module.cert_expires, http_module.cert_expired))
+						if http_module.cert_fingerprint is not None:
+							print('%s   Fingerprint: %s' % (fill_prefix, http_module.cert_fingerprint))
+						if http_module.cert_serial is not None:
+							print('%s   Serial: %s' % (fill_prefix, http_module.cert_serial))
+						if http_module.cert_subject_cn is not None and len(http_module.cert_subject_cn) > 0:
+							print('%s   Subject.CN: %s' % (fill_prefix, http_module.cert_subject_cn))
+						if http_module.cert_issuer_cn is not None and len(http_module.cert_issuer_cn) > 0:
+							print('%s   Issuer.CN: %s' % (fill_prefix, http_module.cert_issuer_cn))
+			if 'ssh' == service.module_name:
+				ssh_module = Module_SSH(service)
+				module_data = service.get_module_data()
+				#print(module_data)
+				fill_prefix = "\t\t\t\t\t"
+				print('%sSSH Info' % fill_prefix)
+				if ssh_module.type is not None:
+					print('%s   type: %s' % (fill_prefix, ssh_module.type))
+				if ssh_module.fingerprint is not None:
+					print('%s   fingerprint: %s' % (fill_prefix, ssh_module.fingerprint))
+				if ssh_module.hassh is not None:
+					print('%s   hassh: %s' % (fill_prefix, ssh_module.hassh))
 				
 
 		if shodan.settings['Out_Service_Data']:
@@ -563,24 +746,235 @@ def out_shodan(shodan):
 		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
 			print("")
 		#if "cobalt_strike_beacon" in json_port:
+def target_is_cache_index(shodan, target):
+	if not target.isnumeric():
+		return False
+	dir_list = os.listdir(shodan.settings['Cache_Dir'])
+	if len(dir_list) == 0:
+		return False
+	#if int(target) < 0 or int(target) >= len(dir_list):
+	#	return False
+	return True
+def list_cache(shodan, target=None):
+	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
+	if shodan.settings['Verbose_Mode']:
+		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
+	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
+	if shodan.settings['Verbose_Mode']:
+		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
 
+	if shodan.settings['Flush_Cache']:
+		print("[*] Flushing cache before listing...")
+
+	if target is not None:
+		print(headers)
+		#if target.isnumeric():
+		if shodan._target_is_cache_index(target):
+			target = shodan._get_target_by_cache_index(target)
+			cache_file = shodan._get_out_path(shodan._target_as_out_file(target))
+		else:
+			cache_file = shodan._get_out_path(shodan._target_as_out_file(target))
+		if not os.path.isfile(cache_file):
+			return
+
+		out_data = "%s" % target
+
+		# // re-cache before stats out
+		if shodan.settings['Flush_Cache']:
+			shodan.cache_host_ip(target, shodan.settings['Include_History'])
+
+		host = Shodan_Host(shodan.get_cache_by_file(cache_file), False)
+		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+		out_data = "%s\t%s" % (out_data, last_update)
+		c_time = os.path.getctime(cache_file)
+		cached_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+		out_data = "%s\t%s" % (out_data, cached_date)
+
+		end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
+		cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
+		cached_delta = relativedelta.relativedelta(end_date, cache_date)
+		cache_delta = relativedelta.relativedelta(end_date, cache_date)
+		out_data = "%s\t" % out_data
+		out_data = "%s%s years" % (out_data, cached_delta.years)
+		out_data = "%s, %s months" % (out_data, cached_delta.months)
+		out_data = "%s, %s days" % (out_data, cached_delta.days)
+		out_data = "%s, %sh, %s min" % (out_data, cached_delta.hours, cached_delta.minutes)
+		if cached_delta.minutes == 0:
+			out_data = "%s, %s sec" % (out_data, cached_delta.seconds)
+		else:
+			out_data = "%s\t" % out_data
+
+		if shodan.settings['Verbose_Mode']:
+			if len(host.hostnames) > 0:
+				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
+			else:
+				out_data = "%s\t" % (out_data)
+			host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
+			out_data = "%sPorts: %s" % (out_data, host_ports)
+			
+		print(out_data)
+		return
+	
+	# prefix each header with "cache index"
+	header_data = ["#\t%s" % l for l in headers.split('\n') if len(l) > 0 ]
+	header_data[1] = "-%s" % header_data[1][1:]
+	headers = '\n'.join(header_data)
+	print(headers)
+	dir_list = os.listdir(shodan.settings['Cache_Dir'])
+	cache_index = -1
+	for file in dir_list:
+		cache_index += 1
+		if not file.startswith("host.") or not file.endswith(".json"):
+			continue
+		target = shodan._out_file_as_target(file)
+		out_data = "%s\t%s" % (cache_index, target)
+
+		# // re-cache before stats out
+		if shodan.settings['Flush_Cache']:
+			shodan.cache_host_ip(target, shodan.settings['Include_History'])
+
+		cache_file = shodan._get_out_path(file)
+		host = Shodan_Host(shodan.get_cache_by_file(cache_file), False)
+		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+		out_data = "%s\t%s" % (out_data, last_update)
+		c_time = os.path.getctime(cache_file)
+		cached_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+		out_data = "%s\t%s" % (out_data, cached_date)
+
+		end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
+		cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
+		cached_delta = relativedelta.relativedelta(end_date, cache_date)
+		cache_delta = relativedelta.relativedelta(end_date, cache_date)
+		out_data = "%s\t" % out_data
+		out_data = "%s%s years" % (out_data, cached_delta.years)
+		out_data = "%s, %s months" % (out_data, cached_delta.months)
+		out_data = "%s, %s days" % (out_data, cached_delta.days)
+		out_data = "%s, %sh, %s min" % (out_data, cached_delta.hours, cached_delta.minutes)
+		if cached_delta.minutes == 0:
+			out_data = "%s, %s sec" % (out_data, cached_delta.seconds)
+		else:
+			out_data = "%s\t" % out_data
+
+		if shodan.settings['Verbose_Mode']:
+			if len(host.hostnames) > 0:
+				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
+			else:
+				out_data = "%s\t" % (out_data)
+			host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
+			out_data = "%sPorts: %s" % (out_data, host_ports)
+			
+		print(out_data)
+def cache_target_list(shodan, target_file):
+	if not os.path.isfile(target_file):
+		return
+	with open(target_file) as f:
+		for line in f:
+			target = line.strip()
+			print(target)
+
+def out_shodan_api_info(shodan):
+	api_info = shodan.api.info()
+	if shodan.api.has_error:
+		print("[!] shodan api error '%s'" % shodan.api.error_msg)
+		shodan.api._reset_error_msg()
+		return
+	print("Shodan API Info\n%s" % (("-"*len("Shodan API Info"))))
+	#api_info = json.load(api_info)
+	
+	scan_credits = int(api_info['scan_credits'])
+	print("Scan Credits (left): %s" % (scan_credits))
+
+	limits_scan_credits = int(api_info['usage_limits']['scan_credits'])
+	limits_query_credits = int(api_info['usage_limits']['query_credits'])
+	limits_monitored_ips = int(api_info['usage_limits']['monitored_ips'])
+	out_data = "* Credit Limits"
+	out_data = "%s\nScan: %s" % (out_data, limits_scan_credits)
+	out_data = "%s\nQuery: %s" % (out_data, limits_query_credits)
+
+	print(out_data)
+	
+
+	if shodan.settings['Verbose_Mode']:
+		print(json.dumps(api_info, indent=4))
+def host_to_ip(hostname):
+	host_ip = None
+	try:
+		host_ip = socket.gethostbyname(hostname)
+	except Exception as e:
+		#self._error_msg = e
+		pass
+	return host_ip
 def main(args):
 	#host = "119.45.94.71"
 
 	shodan = ShodanEx(args)
+	if args.target is not None:
+		# // resolve host/domain to ip address
+		if not shodan._target_is_ip_address(args.target) and not shodan._target_is_cache_index(args.target):
+			# // domain_info costs 1 credit by query
+			"""
+			data = shodan.api.domain_info(args.target)
+			if shodan.api.has_error:
+				print("[!] shodan api error '%s'" % shodan.api.error_msg)
+				shodan.api._reset_error_msg()
+				return
+			print(data['domain'])
+			for sub_item in data['data']:
+				if len(sub_item['subdomain']) > 0 and ("%s.%s" % (sub_item['subdomain'], data['domain'])) == args.target:
+					print("%s = %s" % (args.target, sub_item['value']))
+					break
+			if shodan.settings['Verbose_Mode']:
+				print(json.dumps(data, indent=4))
+			"""
+			# // lets use "free" resolve solution instead
+			host_ip = host_to_ip(shodan.settings['Target'])
+			if host_ip is not None:
+				print("%s = %s" % (shodan.settings['Target'], host_ip))
+			return
+
+	# // set target based on cache index
+	if shodan.settings['Target'] is not None and shodan._target_is_cache_index(shodan.settings['Target']):
+		shodan.settings['Target'] = shodan._get_target_by_cache_index(shodan.settings['Target'])
+		if shodan.settings['Target'] is None:
+			#print("[!] Failed to ")
+			return
+		cache_file = shodan._get_out_path(shodan._target_as_out_file(shodan.settings['Target']))
+		shodan.settings['Cache_File'] = cache_file
+
+	if args.remove_target_from_cache:
+		if shodan._target_is_cached(shodan.settings['Target']):
+			cache_file = shodan._get_out_path(shodan._target_as_out_file(shodan.settings['Target']))
+			os.remove(cache_file)
+			print("[*] Removed target '%s' from cache" % shodan.settings['Target'])
+			return
+
+	if args.out_api_info:
+		out_shodan_api_info(shodan)
+		return
 
 	if args.list_cache:
-		dir_list = os.listdir(shodan.settings['Cache_Dir'])
-		for file in dir_list:
-			if file.startswith("host.") and file.endswith(".json"):
-				print('.'.join(file.split('.')[1:5]))
+		if shodan.settings['Target'] is not None:
+			list_cache(shodan, shodan.settings['Target'])
+		else:
+			list_cache(shodan)
 		return
 
 	if args.flush_cache:
-		dir_list = os.listdir(shodan.settings['Cache_Dir'])
-		for file in dir_list:
-			cache_file = os.path.join(shodan.settings['Cache_Dir'], file)
-			os.remove(cache_file)
+		# // TODO: flush based on cache age
+		if shodan.settings['Target'] is not None:
+			file = shodan._target_as_out_file(shodan.settings['Target'])
+			cache_file = shodan._get_out_path(file)
+			if os.path.isfile(cache_file):
+				print("[*] Flushing cache for target '%s'..." % shodan.settings['Target'])
+				os.remove(cache_file)
+		else:
+			dir_list = os.listdir(shodan.settings['Cache_Dir'])
+			for file in dir_list:
+				cache_file = shodan._get_out_path(file)
+				os.remove(cache_file)
+
+	if shodan.settings['Target'] is None:
+		print("shodan-cli.py: error: the following arguments are required: -t")
 		return
 
 	if not shodan.api.is_available:
@@ -590,34 +984,41 @@ def main(args):
 		print("Shodan API not available, please run 'shodan init <api-key>'")
 		return
 
+	# // ADD SUPPORT FOR TARGET FILE
+	if os.path.isfile(shodan.settings['Target']):
+		cache_target_list(shodan, shodan.settings['Target'])
+		return
+
 	if shodan.use_cache:
 		# re-cache data
-		if not shodan.settings['Out_Data']:
-			print("[*] Caching information for target '%s'..." % shodan.settings['Target'])
-			shodan.cache_host_ip()
-			if shodan.get_cache() is None:
-				print("[!] No information available for target '%s'" % shodan.settings['Target'])
-			return
+		#if not shodan.settings['Out_Data']:
+		#	print("[*] Caching information for target '%s'..." % shodan.settings['Target'])
+		#	shodan.cache_host()
+		#	if shodan.get_cache() is None:
+		#		print("[!] No information available for target '%s'" % shodan.settings['Target'])
+		#	return
 		# cache data if not exists
 		if not shodan.cache_exists:
-			#print('[*] caching data...')
 			print("[*] Retrieving information for target '%s'..." % shodan.settings['Target'])
-			shodan.cache_host_ip()
+			shodan.cache_host()
 		if shodan.get_cache() is None:
 			print("[!] No information available for target '%s'" % shodan.settings['Target'])
 			return
-	if shodan.settings['Out_Data']:
-		out_shodan(shodan)
+	#if shodan.settings['Out_Data']:
+	#	out_shodan(shodan)
+	out_shodan(shodan)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
 
-	parser.add_argument('-t', dest='target', required=True, help='Host or IP address of the target to lookup')
+	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit")
+	parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
 	parser.add_argument('-C', '--cache-dir', dest='cache_dir', default='shodan-data', help="store cache to directory, default 'shodan-data'")
-	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts")
-	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history")
-	parser.add_argument('-H', '--history', dest='fetch_history', action='store_true', help="Fetch host history")
+	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit, use '-F' to re-cache")
+	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
+	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
+	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history")
 	parser.add_argument('-O', '--out-data', dest='out_data', action='store_true', help="Output data to console")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
