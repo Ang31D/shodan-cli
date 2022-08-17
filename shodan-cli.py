@@ -596,9 +596,17 @@ def out_shodan(shodan):
 	json_data = shodan.get_cache()
 
 	print("* Shodan\n %s" % ('-'*30))
-	print("Target: %s" % shodan.settings["Target"])
+	#print("Target: %s" % shodan.settings["Target"])
 	
 	host = Shodan_Host(json_data, shodan.settings['Include_History'])
+
+	ip_host = ip_to_host(host.ip)
+	if ip_host is not None:
+		#print("IP Address to Host: %s" % ip_host)
+		print("Target: %s (Host: %s)" % (shodan.settings["Target"], ip_host))
+	else:
+		print("Target: %s" % shodan.settings["Target"])
+
 	print("Last Update: %s" % host.last_update)
 	print("")
 
@@ -683,6 +691,9 @@ def out_shodan(shodan):
 				# // info from module data
 				module_data = service.get_module_data()
 				if module_data is not None:
+					if 'waf' in module_data and module_data['waf'] is not None:
+						print("%sWAF: %s" % (fill_prefix, module_data['waf']))
+						
 					print('%sWEB Info' % fill_prefix)
 					if 'title' in module_data and module_data['title'] is not None:
 						print("%s   page title: %s" % (fill_prefix, module_data['title']))
@@ -904,6 +915,15 @@ def host_to_ip(hostname):
 		#self._error_msg = e
 		pass
 	return host_ip
+def ip_to_host(ip):
+	ip_host = None
+	try:
+		ip_host = socket.gethostbyaddr(ip)
+		ip_host = ip_host[0]
+	except Exception as e:
+		#self._error_msg = e
+		pass
+	return ip_host
 def main(args):
 	#host = "119.45.94.71"
 
@@ -929,8 +949,14 @@ def main(args):
 			# // lets use "free" resolve solution instead
 			host_ip = host_to_ip(shodan.settings['Target'])
 			if host_ip is not None:
-				print("%s = %s" % (shodan.settings['Target'], host_ip))
-			return
+				print("[*] Target '%s' resolves to IP Address '%s', switching target to IP Address" % (shodan.settings['Target'], host_ip))
+				shodan.settings['Target'] = host_ip
+				cache_file = shodan._get_out_path(shodan._target_as_out_file(shodan.settings['Target']))
+				shodan.settings['Cache_File'] = cache_file
+			else:
+				print("[!] Target '%s' failed to resolve to IP Address, skipping target" % shodan.settings['Target'])
+				return
+
 
 	# // set target based on cache index
 	if shodan.settings['Target'] is not None and shodan._target_is_cache_index(shodan.settings['Target']):
