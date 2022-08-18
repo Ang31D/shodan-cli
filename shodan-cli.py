@@ -190,14 +190,9 @@ class ShodanEx:
 		except ValueError:
 			return False
 	def _target_is_cache_index(self, target):
-		if not target.isnumeric():
-			return False
-		dir_list = os.listdir(self.settings['Cache_Dir'])
-		if len(dir_list) == 0:
-			return False
-		if int(target) < 0 or int(target) >= len(dir_list):
-			return False
-		return True
+		if target.isnumeric():
+			return True
+		return False
 	def _target_is_cached(self, target):
 		dir_list = os.listdir(self.settings['Cache_Dir'])
 		for file in dir_list:
@@ -351,7 +346,8 @@ class Port_Service:
 	@property
 	def identifier(self):
 		if "_shodan" in self._json and "id" in self._json["_shodan"]:
-			return "%s (%s)" % (self._json["_shodan"]["id"], self.timestamp)
+			return self._json["_shodan"]["id"]
+			#return "%s (%s)" % (self._json["_shodan"]["id"], self.timestamp)
 		return ''
 	
 	@property
@@ -638,12 +634,14 @@ class Module_HTTP:
 		return None
 
 	@property
-	def components(self):
+	#def components(self):
+	def web_technologies(self):
 		result = []
 		if 'http' in self._json and "components" in self._json['http']:
 			for technology in self._json['http']['components']:
 				categories = self._json['http']['components'][technology]['categories']
-				result.append('"%s": "%s"' % (technology, ', '.join(categories)))
+				#result.append('"%s": "%s"' % (technology, ', '.join(categories)))
+				result.append('%s (%s)' % (technology, ', '.join(categories)))
 		return result
 
 	def has_waf(self):
@@ -697,7 +695,7 @@ def out_shodan(shodan):
 	else:
 		os_list = host.get_os_by_services()
 		if len(os_list) > 0:
-			print("OS: %s - based on services!" % ', '.join(os_list))
+			print("OS: %s # based on services!" % ', '.join(os_list))
 	print("Hostnames: %s" % ', '.join(host.hostnames))
 	print("Domains: %s" % ', '.join(host.domains))
 	print("Ports: %s" % ", ".join([str(int) for int in host.host_ports])) # convert int to str
@@ -742,14 +740,14 @@ def out_shodan(shodan):
 		print("%s\t%s" % (service.scan_date, service_header))
 
 		fill_prefix = "\t\t\t\t\t"
-		print("%sShodan - Identifier: %s" % (fill_prefix, service.identifier))
 
 		if shodan.settings['Verbose_Mode']:
+			print("%sShodan.ID: %s" % (fill_prefix, service.identifier))
 			print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
 			if service.has_tags:
 				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
 			print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
-			# [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
+			# v-- [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
 			if service.product.is_cobaltstrike:
 				print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
 			# // HTTP Module
@@ -766,10 +764,14 @@ def out_shodan(shodan):
 				# // info from module data
 				module_data = service.get_module_data()
 				if module_data is not None:
-					#if 'waf' in module_data and module_data['waf'] is not None:
-					#	print("%sWAF: %s" % (fill_prefix, module_data['waf']))
-					if http_module.has_waf:
-						print("%sWAF: %s" % (fill_prefix, http_module.waf))
+					#if http_module.has_waf:
+					#	print("%sWAF: %s" % (fill_prefix, http_module.waf))
+					# ^-- [BUG] has_waf returns True for None, weird
+					#
+					# v-- this works
+					http_waf = http_module.waf
+					if http_waf:
+						print("%sWAF: %s" % (fill_prefix, http_waf))
 						
 					print('%sWEB Info' % fill_prefix)
 					if 'title' in module_data and module_data['title'] is not None:
@@ -780,8 +782,8 @@ def out_shodan(shodan):
 						print("%s   HTML hash: %s" % (fill_prefix, module_data['html_hash']))
 				if http_module.favicon_hash is not None:
 					print("%s   favicon Hash: %s" % (fill_prefix, http_module.favicon_hash))
-				if len(http_module.components) > 0:
-					print("%s   Web Technologies: %s" % (fill_prefix, ', '.join(http_module.components)))
+				if len(http_module.web_technologies) > 0:
+					print("%s   Web Technologies: %s" % (fill_prefix, ', '.join(http_module.web_technologies)))
 	
 				# // output SSL Certificate information
 				if http_module.is_ssl:
@@ -1038,7 +1040,6 @@ def main(args):
 	if shodan.settings['Target'] is not None and shodan._target_is_cache_index(shodan.settings['Target']):
 		shodan.settings['Target'] = shodan._get_target_by_cache_index(shodan.settings['Target'])
 		if shodan.settings['Target'] is None:
-			#print("[!] Failed to ")
 			return
 		cache_file = shodan._get_out_path(shodan._target_as_out_file(shodan.settings['Target']))
 		shodan.settings['Cache_File'] = cache_file
