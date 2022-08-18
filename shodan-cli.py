@@ -79,7 +79,6 @@ class ShodanSettings:
 		self.settings['Target'] = None
 		self.settings['Include_History'] = False
 
-		self.settings['Out_Data'] = False
 		self.settings['Verbose_Mode'] = False
 
 		self.settings['Out_Host_JSON'] = False
@@ -102,7 +101,6 @@ class ShodanSettings:
 		self.settings['Target'] = args.target
 		self.settings['Include_History'] = args.include_history
 
-		self.settings['Out_Data'] = args.out_data
 		self.settings['Verbose_Mode'] = args.verbose_mode
 		self.settings['Out_Host_JSON'] = args.out_host_json
 		self.settings['Out_Service_Data'] = args.out_service_data
@@ -157,29 +155,6 @@ class ShodanEx:
 			if os.path.getsize(self.settings['Cache_File']) > 0:
 				return True
 		return False
-
-	def _get_latest_per_port(self):
-		ports = OrderedDict()
-		service_ports = OrderedDict()
-		_json = self.get_cache()
-		services = []
-		for port_json in _json['data']:
-			port = int(port_json['port'])
-			if port not in ports:
-				service_ports[port] = []
-			service_ports[port].append(Port_Service(port_json))
-
-		for port in service_ports: # sort by timestamp by grouped ports
-			service_ports[port] = sorted(service_ports[port], key=attrgetter('timestamp')) # sort by timestamp
-		sorted_ports = sorted(service_ports)
-		for port in sorted_ports:
-			for service in service_ports[port]:
-				print("%s port: %s" % (service.timestamp, service.port))
-		print("")
-		for port in sorted_ports:
-			service_first_scan = service_ports[port][0]
-			service_last_scan = service_ports[port][-1]
-			print("port: %s - first-seen: %s, last-seen: %s" % (port, service_first_scan.timestamp, service_last_scan.timestamp))
 
 	def get_cache(self):
 		if self._cache_data is not None:
@@ -282,13 +257,14 @@ class Shodan_Host:
 				service_ports[port] = []
 			service_ports[port].append(Port_Service(port_json))
 
-		for port in service_ports: # sort by timestamp by grouped ports
-			service_ports[port] = sorted(service_ports[port], key=attrgetter('timestamp')) # sort by timestamp
+		# sort by timestamp by grouped ports
+		for port in service_ports:
+			service_ports[port] = sorted(service_ports[port], key=attrgetter('timestamp'))
 
 		sorted_ports = sorted(service_ports)
 		if include_history:
 			for port in sorted_ports:
-				first_seen_date = service_ports[port][0].timestamp
+				first_seen_date = datetime.strptime(service_ports[port][0].timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 				for service in service_ports[port]:
 					service.first_seen = first_seen_date
 					self.services.append(service)
@@ -298,6 +274,7 @@ class Shodan_Host:
 				service_last_scan = service_ports[port][-1]
 				first_seen_date = datetime.strptime(service_first_scan.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 				service_last_scan.first_seen = first_seen_date
+				#print("%s : %s" % (service_last_scan.port, service_last_scan.identifier))
 				self.services.append(service_last_scan)
 
 	@property
@@ -362,7 +339,7 @@ class Port_Service:
 	def __init__(self, json_data):
 		self._json = json_data
 		self.port = int(self._json['port'])
-		self.transport = self._json['transport']
+		self.protocol = self._json['transport']
 		self.timestamp = '' if 'timestamp' not in self._json else self._json['timestamp']
 		self.scan_date = ''
 		if len(self.timestamp) > 0:
@@ -370,6 +347,12 @@ class Port_Service:
 			self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d")
 		self.product = Service_Product(self._json)
 		self.first_seen = ''
+
+	@property
+	def identifier(self):
+		if "_shodan" in self._json and "id" in self._json["_shodan"]:
+			return "%s (%s)" % (self._json["_shodan"]["id"], self.timestamp)
+		return ''
 	
 	@property
 	def banner(self):
@@ -435,6 +418,19 @@ class Port_Service:
 		if 'tags' in self._json:
 			return self._json['tags']
 		return ''
+
+	@property
+	def is_web_service(self):
+		if self.module_name is not None:
+			if 'https' == self.module_name or 'http' == self.module_name or self.module_name.lower().startswith("http-"):
+				return True
+		return False
+	@property
+	def is_ssh_service(self):
+		if self.module_name is not None:
+			if 'ssh' == self.module_name or self.module_name.lower().startswith("ssh-"):
+				return True
+		return False
 class Service_Product:
 	def __init__(self, json_data):
 		self._json = json_data
@@ -443,9 +439,27 @@ class Service_Product:
 		self.info = '' if 'info' not in self._json else self._json['info']
 
 	def is_cobaltstrike(self):
-		if self.name == "Cobalt Strike Beacon":
+		print("is_cobaltstrike: '%s'" % self.name)
+		if self.name.lower() == "cobalt strike beacon":
 			return True
 		return False
+	def is_openssh(self):
+		if "openssh" in self.name.lower():
+			return True
+		return False
+	def is_apache(self):
+		if "apache" in self.name.lower():
+			return True
+		return False
+	def is_nginx(self):
+		if "nginx" in self.name.lower():
+			return True
+		return False
+
+class Product_Cobalt_Strike_Beacon:
+	def __init__(self, ssh_service):
+		self.service = ssh_service
+		self._json = self.service._json
 
 class Module_SSH:
 	def __init__(self, ssh_service):
@@ -475,6 +489,54 @@ class Module_SSH:
 			if 'type' in data:
 				return data['type']
 		return None
+class HTTP_SSL_Cert:
+	def __init__(self, json_data):
+		self._json = json_data
+
+	@property
+	def has_ssl(self):
+		return 'ssl' in self._json
+	@property
+	def data(self):
+		if self.has_ssl:
+			return self._json['ssl']
+		return None
+
+	@property
+	def issued(self):
+		if 'cert' in self.data:
+			return datetime.strptime(self.data['cert']['issued'], '%Y%m%d%H%M%SZ').strftime("%Y-%m-%d %H:%M:%S")
+		return None
+	@property
+	def expires(self):
+		if 'cert' in self.data:
+			return datetime.strptime(self.data['cert']['expires'], '%Y%m%d%H%M%SZ').strftime("%Y-%m-%d %H:%M:%S")
+		return None
+	@property
+	def expired(self):
+		if 'cert' in self.data and 'expired' in self.data['cert']:
+			return self.data['cert']['expired']
+		return True
+	@property
+	def fingerprint(self):
+		if 'cert' in self.data and 'fingerprint' in self.data['cert']:
+			return self.data['cert']['fingerprint']['sha256']
+		return None
+	@property
+	def serial(self):
+		if 'cert' in self.data and 'serial' in self.data['cert']:
+			return self.data['cert']['serial']
+		return None
+	@property
+	def subject_cn(self):
+		if 'cert' in self.data and 'subject' in self.data['cert'] and 'CN' in self.data['cert']['subject']:
+			return self.data['cert']['subject']['CN']
+		return None
+	@property
+	def issuer_cn(self):
+		if 'cert' in self.data and 'issuer' in self.data['cert'] and 'CN' in self.data['cert']['issuer']:
+			return self.data['cert']['issuer']['CN']
+		return None
 
 class Module_HTTP:
 	def __init__(self, http_service):
@@ -497,82 +559,54 @@ class Module_HTTP:
 		return ''
 	@property
 	def headers(self):
-		status_head, headers_dict = self._create_header_dict(io.StringIO(self.service.data))
+		status_head, headers_dict = self._parse_headers(io.StringIO(self.service.data))
 		return headers_dict
 	@property
 	def header_status(self):
-		status_head, headers_dict = self._create_header_dict(io.StringIO(self.service.data))
+		status_head, headers_dict = self._parse_headers(io.StringIO(self.service.data))
 		return status_head
 
 	@property
-	def has_ssl_data(self):
+	def has_ssl_cert(self):
+		if self.is_ssl:
+			return 'cert' in self.ssl_data
+		return False
+	@property
+	def ssl_cert(self):
+		return HTTP_SSL_Cert(self._json)
+	@property
+
+	def is_ssl(self):
 		return 'ssl' in self._json
 	@property
 	def ssl_data(self):
-		if self.has_ssl_data:
+		if self.is_ssl:
 			return self._json['ssl']
 		return None
 
 	@property
 	def jarm(self):
-		if 'https' == self.service.module_name and self.has_ssl_data:
+		if 'https' == self.service.module_name and self.is_ssl:
 			if 'jarm' in self.ssl_data:
 				return self.ssl_data['jarm']
 		return None
 	@property
 	def ja3s(self):
-		if 'https' == self.service.module_name and self.has_ssl_data:
+		if 'https' == self.service.module_name and self.is_ssl:
 			if 'ja3s' in self.ssl_data:
 				return self.ssl_data['ja3s']
 		return None
 	@property
 	def tls_versions(self):
+		result = []
 		if 'versions' in self.ssl_data:
-			return self.ssl_data['versions']
-		return []
+			# only include supported tls versions
+			for version in self.ssl_data['versions']:
+				if not version.startswith("-"):
+					result.append(version)
+		return result
 
-	@property
-	def has_cert(self):
-		if self.has_ssl_data:
-			return 'cert' in self.ssl_data
-		return False
-	@property
-	def cert_issued(self):
-		if 'cert' in self.ssl_data:
-			return datetime.strptime(self.ssl_data['cert']['issued'], '%Y%m%d%H%M%SZ').strftime("%Y-%m-%d %H:%M:%S")
-		return None
-	@property
-	def cert_expires(self):
-		if 'cert' in self.ssl_data:
-			return datetime.strptime(self.ssl_data['cert']['expires'], '%Y%m%d%H%M%SZ').strftime("%Y-%m-%d %H:%M:%S")
-		return None
-	@property
-	def cert_expired(self):
-		if 'cert' in self.ssl_data:
-			return self.ssl_data['cert']['expired']
-		return ''
-	@property
-	def cert_fingerprint(self):
-		if 'cert' in self.ssl_data and 'fingerprint' in self.ssl_data['cert']:
-			return self.ssl_data['cert']['fingerprint']['sha256']
-		return None
-	@property
-	def cert_serial(self):
-		if 'cert' in self.ssl_data and 'serial' in self.ssl_data['cert']:
-			return self.ssl_data['cert']['serial']
-		return None
-	@property
-	def cert_subject_cn(self):
-		if 'cert' in self.ssl_data and 'subject' in self.ssl_data['cert']:
-			return self.ssl_data['cert']['subject']['CN']
-		return None
-	@property
-	def cert_issuer_cn(self):
-		if 'cert' in self.ssl_data and 'issuer' in self.ssl_data['cert']:
-			return self.ssl_data['cert']['issuer']['CN']
-		return None
-
-	def _create_header_dict(self, ioheaders):
+	def _parse_headers(self, ioheaders):
 		"""
 		parses an http response into the status-line and headers
 		"""
@@ -592,6 +626,52 @@ class Module_HTTP:
 				headers[key] = value # remove leading/trailing whitespace
 		return status_head, headers
 
+	@property
+	def favicon_hash(self):
+		if 'http' in self._json and 'favicon' in self._json['http'] and 'hash' in self._json['http']['favicon']:
+			return self._json['http']['favicon']['hash']
+		return None
+	@property
+	def content(self):
+		if 'html' in self._json:
+			return self._json['html']
+		return None
+
+	@property
+	def components(self):
+		result = []
+		if 'http' in self._json and "components" in self._json['http']:
+			for technology in self._json['http']['components']:
+				categories = self._json['http']['components'][technology]['categories']
+				result.append('"%s": "%s"' % (technology, ', '.join(categories)))
+		return result
+
+	def has_waf(self):
+		if self.waf is not None:
+			return True
+		return False
+	@property
+	def waf(self):
+		module_data = self.service.get_module_data()
+		if module_data is not None:
+			if 'waf' in module_data and module_data['waf'] is not None:
+				return module_data['waf']
+		return None
+def filter_out_service(shodan, service):
+	# filter in/out based on port, module-name
+	if len(shodan.settings['Match_On_Ports']) > 0:
+		if service.port not in shodan.settings['Match_On_Ports']:
+			return True
+	if len(shodan.settings['Filter_Out_Ports']) > 0:
+		if service.port in shodan.settings['Filter_Out_Ports']:
+			return True
+	if len(shodan.settings['Match_On_Modules']) > 0:
+		module_name = service.module_name
+		if '-' in module_name:
+			module_name = module_name.split('-')[0]
+		if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
+			return True
+	filter_out = False
 def out_shodan(shodan):
 	json_data = shodan.get_cache()
 
@@ -641,23 +721,12 @@ def out_shodan(shodan):
 	print("%s\t%s      %s\t%s" % (("-"*len("Scan-date")), ("-"*len("Port")), ("-"*len("Service")), ("-"*len("Version / Info"))))
 	for service in host.services:
 		# filter in/out based on port, module-name
-		if len(shodan.settings['Match_On_Ports']) > 0:
-			if service.port not in shodan.settings['Match_On_Ports']:
-				continue
-		if len(shodan.settings['Filter_Out_Ports']) > 0:
-			if service.port in shodan.settings['Filter_Out_Ports']:
-				continue
-
-		if len(shodan.settings['Match_On_Modules']) > 0:
-			module_name = service.module_name
-			if '-' in module_name:
-				module_name = module_name.split('-')[0]
-			if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
-				continue
+		if filter_out_service(shodan, service):
+			continue
 
 		# // output service overview
 		fill_prefix = 1
-		service_header = "%s/%s" % (service.port, service.transport.upper())
+		service_header = "%s/%s" % (service.port, service.protocol.upper())
 		module_name = service.module_name
 		if '-' in module_name:
 			module_name = module_name.split('-')[0]
@@ -672,13 +741,19 @@ def out_shodan(shodan):
 			service_header = "%s\t\t(%s)" % (service_header, service.module_name)
 		print("%s\t%s" % (service.scan_date, service_header))
 
+		fill_prefix = "\t\t\t\t\t"
+		print("%sShodan - Identifier: %s" % (fill_prefix, service.identifier))
+
 		if shodan.settings['Verbose_Mode']:
-			fill_prefix = "\t\t\t\t\t"
-			print("%sFirst Seen: %s" % (fill_prefix, service.first_seen))
+			print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
 			if service.has_tags:
 				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
+			print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
+			# [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
+			if service.product.is_cobaltstrike:
+				print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
 			# // HTTP Module
-			if 'https' == service.module_name or 'http' == service.module_name:
+			if service.is_web_service:
 				http_module = Module_HTTP(service)
 				# // try to figure out the http-server
 				http_server = ""
@@ -691,48 +766,56 @@ def out_shodan(shodan):
 				# // info from module data
 				module_data = service.get_module_data()
 				if module_data is not None:
-					if 'waf' in module_data and module_data['waf'] is not None:
-						print("%sWAF: %s" % (fill_prefix, module_data['waf']))
+					#if 'waf' in module_data and module_data['waf'] is not None:
+					#	print("%sWAF: %s" % (fill_prefix, module_data['waf']))
+					if http_module.has_waf:
+						print("%sWAF: %s" % (fill_prefix, http_module.waf))
 						
 					print('%sWEB Info' % fill_prefix)
 					if 'title' in module_data and module_data['title'] is not None:
-						print("%s   page title: %s" % (fill_prefix, module_data['title']))
+						print("%s   Page Title: %s" % (fill_prefix, module_data['title']))
 					if 'headers_hash' in module_data and module_data['headers_hash'] is not None:
-						print("%s   headers hash: %s" % (fill_prefix, module_data['headers_hash']))
+						print("%s   Headers Hash: %s" % (fill_prefix, module_data['headers_hash']))
 					if 'html_hash' in module_data and module_data['html_hash'] is not None:
-						print("%s   html hash: %s" % (fill_prefix, module_data['html_hash']))
+						print("%s   HTML hash: %s" % (fill_prefix, module_data['html_hash']))
+				if http_module.favicon_hash is not None:
+					print("%s   favicon Hash: %s" % (fill_prefix, http_module.favicon_hash))
+				if len(http_module.components) > 0:
+					print("%s   Web Technologies: %s" % (fill_prefix, ', '.join(http_module.components)))
 	
 				# // output SSL Certificate information
-				if 'https' == service.module_name and http_module.has_ssl_data:
+				if http_module.is_ssl:
 					if http_module.jarm is not None:
 						print('%sjarm: %s' % (fill_prefix, http_module.jarm))
 					if http_module.ja3s is not None:
 						print('%sja3s: %s' % (fill_prefix, http_module.ja3s))
 					if len(http_module.tls_versions) > 0:
 						print('%sTLS-Versions: %s' % (fill_prefix, ', '.join(http_module.tls_versions)))
-					if http_module.has_cert:
+
+					if http_module.has_ssl_cert:
 						print('%sSSL Certificate' % fill_prefix)
-						print('%s   Issued: %s, Expires: %s (Expired: %s)' % (fill_prefix, http_module.cert_issued, http_module.cert_expires, http_module.cert_expired))
-						if http_module.cert_fingerprint is not None:
-							print('%s   Fingerprint: %s' % (fill_prefix, http_module.cert_fingerprint))
-						if http_module.cert_serial is not None:
-							print('%s   Serial: %s' % (fill_prefix, http_module.cert_serial))
-						if http_module.cert_subject_cn is not None and len(http_module.cert_subject_cn) > 0:
-							print('%s   Subject.CN: %s' % (fill_prefix, http_module.cert_subject_cn))
-						if http_module.cert_issuer_cn is not None and len(http_module.cert_issuer_cn) > 0:
-							print('%s   Issuer.CN: %s' % (fill_prefix, http_module.cert_issuer_cn))
-			if 'ssh' == service.module_name:
+						ssl_cert = http_module.ssl_cert
+						print('%s   Issued: %s, Expires: %s (Expired: %s)' % (fill_prefix, ssl_cert.issued, ssl_cert.expires, ssl_cert.expired))
+						if ssl_cert.fingerprint is not None:
+							print('%s   Fingerprint: %s' % (fill_prefix, ssl_cert.fingerprint))
+						if ssl_cert.serial is not None:
+							print('%s   Serial: %s' % (fill_prefix, ssl_cert.serial))
+						if ssl_cert.subject_cn is not None and len(ssl_cert.subject_cn) > 0:
+							print('%s   Subject.CN: %s' % (fill_prefix, ssl_cert.subject_cn))
+						if ssl_cert.issuer_cn is not None and len(ssl_cert.issuer_cn) > 0:
+							print('%s   Issuer.CN: %s' % (fill_prefix, ssl_cert.issuer_cn))
+
+			#if 'ssh' == service.module_name:
+			if service.is_ssh_service:
 				ssh_module = Module_SSH(service)
 				module_data = service.get_module_data()
-				#print(module_data)
-				fill_prefix = "\t\t\t\t\t"
 				print('%sSSH Info' % fill_prefix)
 				if ssh_module.type is not None:
-					print('%s   type: %s' % (fill_prefix, ssh_module.type))
+					print('%s   Type: %s' % (fill_prefix, ssh_module.type))
 				if ssh_module.fingerprint is not None:
-					print('%s   fingerprint: %s' % (fill_prefix, ssh_module.fingerprint))
+					print('%s   Fingerprint: %s' % (fill_prefix, ssh_module.fingerprint))
 				if ssh_module.hassh is not None:
-					print('%s   hassh: %s' % (fill_prefix, ssh_module.hassh))
+					print('%s   Hash: %s' % (fill_prefix, ssh_module.hassh))
 				
 
 		if shodan.settings['Out_Service_Data']:
@@ -756,16 +839,7 @@ def out_shodan(shodan):
 
 		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
 			print("")
-		#if "cobalt_strike_beacon" in json_port:
-def target_is_cache_index(shodan, target):
-	if not target.isnumeric():
-		return False
-	dir_list = os.listdir(shodan.settings['Cache_Dir'])
-	if len(dir_list) == 0:
-		return False
-	#if int(target) < 0 or int(target) >= len(dir_list):
-	#	return False
-	return True
+
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
 	if shodan.settings['Verbose_Mode']:
@@ -876,6 +950,8 @@ def list_cache(shodan, target=None):
 			
 		print(out_data)
 def cache_target_list(shodan, target_file):
+	print("[!] 'cache_target_list' function deprecated!")
+	return
 	if not os.path.isfile(target_file):
 		return
 	with open(target_file) as f:
@@ -1015,38 +1091,27 @@ def main(args):
 		cache_target_list(shodan, shodan.settings['Target'])
 		return
 
-	if shodan.use_cache:
-		# re-cache data
-		#if not shodan.settings['Out_Data']:
-		#	print("[*] Caching information for target '%s'..." % shodan.settings['Target'])
-		#	shodan.cache_host()
-		#	if shodan.get_cache() is None:
-		#		print("[!] No information available for target '%s'" % shodan.settings['Target'])
-		#	return
-		# cache data if not exists
-		if not shodan.cache_exists:
-			print("[*] Retrieving information for target '%s'..." % shodan.settings['Target'])
-			shodan.cache_host()
-		if shodan.get_cache() is None:
-			print("[!] No information available for target '%s'" % shodan.settings['Target'])
-			return
-	#if shodan.settings['Out_Data']:
-	#	out_shodan(shodan)
+	if not shodan.cache_exists:
+		print("[*] Retrieving information for target '%s'..." % shodan.settings['Target'])
+		shodan.cache_host()
+	if shodan.get_cache() is None:
+		print("[!] No information available for target '%s'" % shodan.settings['Target'])
+		return
+
 	out_shodan(shodan)
 
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
 
 	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit")
-	parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
+	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
+	parser.add_argument('-t', dest='target', help='Host or IP address (or cache index) of the target to lookup')
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
 	parser.add_argument('-C', '--cache-dir', dest='cache_dir', default='shodan-data', help="store cache to directory, default 'shodan-data'")
 	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit, use '-F' to re-cache")
 	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
 	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
 	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history")
-	parser.add_argument('-O', '--out-data', dest='out_data', action='store_true', help="Output data to console")
-	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
 	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
 	parser.add_argument('-mp', '--match-ports', dest='match_on_ports', help='Match on ports, comma separated list')
@@ -1054,6 +1119,7 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-ports', dest='filter_out_ports', help='Filter out ports, comma separated list')
 	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
 	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json")
+	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 
 	args = parser.parse_args()
 	main(args)
