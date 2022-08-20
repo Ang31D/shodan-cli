@@ -1,3 +1,3 @@
 # shodan-cli
 
-Extract useful information from shodan using the host api.
+Extract interesting information regarding a host from shodan using the host api.
