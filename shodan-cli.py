@@ -8,13 +8,949 @@ import argparse
 import json
 import os
 from collections import OrderedDict
-from datetime import datetime, date
-from dateutil import relativedelta
+from datetime import datetime, date, timedelta
+#from dateutil import relativedelta
+from dateutil.relativedelta import relativedelta
 import io
 from operator import attrgetter
 from ipaddress import ip_address
 import socket
+import re
 
+class RelativeDate:
+	today = "today"
+	yesterday = "yesterday"
+	week = "week"
+
+	def __init__(self, date, date_string):
+		self._date = date
+		self._date_string = date_string
+
+	@property
+	def date(self):
+		return self._date
+
+	def parse(self):
+		if not self._is_relative_date():
+			return False
+
+		if self._endswith_ago(self._date_string):
+			ago_items = None
+			if ' ' in self._date_string:
+				ago_items = self._date_string.split(" ")[0:-1]
+			elif '.' in self._date_string:
+				ago_items = self._date_string.split(".")[0:-1]
+				if ago_items is None:
+					return False
+			return self.parse_ago(ago_items)
+		return False
+
+	def parse_ago(self, ago_items):
+		if ago_items is None:
+			return False
+
+		date_ago = self._date
+		previous_item = None
+		word_num = None
+		ago_items_count = len(ago_items)
+		skip_next = False
+		for i in range(0, len(ago_items)):
+			current_item = ago_items[i]
+			#print("- 1st ago_items(%s) '%s'" % (i, ago_items[i]))
+			if skip_next:
+				skip_next = False
+				print("[-] skipping ago_items(%s) '%s'" % (i, current_item))
+				continue
+			#print("- 1st ago_items(%s) '%s'" % (i, ago_items[i]))
+			
+			if current_item.isnumeric():
+				print("- 1st ago_items(%s) '%s'" % (i, current_item))
+				word_num = int(current_item)
+				
+				#// check next item if relative word
+				if (i+1) < len(ago_items):
+					next_item = ago_items[i+1]
+					print("- 2nd next ago_items(%s) '%s'" % (i+1, next_item))
+					# // remove number of year, month, week, day, hour, min, sec
+					if self.is_date_word(next_item) or self.is_time_word(next_item):
+						if self.word_is_year(next_item):
+							date_ago_delta = DateHelper.remove_years_from(date_ago, word_num)
+							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
+							date_ago = date_ago_delta
+						elif self.word_is_month(next_item):
+							date_ago_delta = DateHelper.remove_months_from(date_ago, word_num)
+							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
+							date_ago = date_ago_delta
+						elif self.word_is_week(next_item):
+							date_ago_delta = DateHelper.remove_weeks_from(date_ago, word_num)
+							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
+							date_ago = date_ago_delta
+						elif self.word_is_day(next_item):
+							date_ago_delta = DateHelper.remove_days_from(date_ago, word_num)
+							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
+							date_ago = date_ago_delta
+						elif self.word_is_hour(next_item):
+							date_ago_delta = DateHelper.remove_hours_from(date_ago, word_num)
+							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
+							date_ago = date_ago_delta
+						elif self.word_is_min(next_item):
+							date_ago_delta = DateHelper.remove_minutes_from(date_ago, word_num)
+							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
+							date_ago = date_ago_delta
+						elif self.word_is_sec(next_item):
+							date_ago_delta = DateHelper.remove_seconds_from(date_ago, word_num)
+							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
+							date_ago = date_ago_delta
+						else:
+							print("[!] warning - unknown date word, ago_items[%s], '%s'" % ((i+1), next_item))
+							#return False
+						skip_next = True
+						continue
+					# // set date by month: jan, feb, mar, apr, may, jun, jul, aug, sep, oct, nov, dec
+					elif self.is_month_word(next_item):
+						month_digits = DateHelper.month_to_digits(next_item)
+						date_ago_delta = date_ago.replace(month=month_digits, day=word_num)
+						print("[+] set date to '%s %s (%s)' - date: %s, delta: %s" % (word_num, next_item, month_digits, date_ago, date_ago_delta))
+						date_ago = date_ago_delta
+						skip_next = True
+					elif self.is_weekday_word(next_item):
+						print("[!] warning - unsupported word '%s' after digit(s), ago_items[%s], '%s'" % (next_item, (i+1), next_item))
+						return False
+					else:
+						print("[!] warning - unknown next word, ago_items[%s], '%s'" % ((i+1), next_item))
+						return False
+				else:
+					print("warning - no more items after - current ago_items[%s], '%s'" % (i, current_item))
+					return False
+			# // word: today, yesterday
+			elif self.is_relative_day(current_item):
+				print("- 1st ago_items(%s) '%s'" % (i, current_item))
+				if self.word_is_now(current_item):
+					date_ago_delta = DateHelper.now()
+					print("[+] set date to '%s' - date: %s, delta: %s" % (current_item, date_ago, date_ago_delta))
+					date_ago = date_ago_delta
+					skip_next = False
+				if self.word_is_today(current_item):
+					print("word is 'today' (%s)" % i)
+					today_date = DateHelper(DateHelper.now())
+					date_ago_delta = date_ago.replace(year=today_date.year, month=today_date.month_digits, day=today_date.day_digits)
+					print("[+] set date to '%s' - %s %s (%s) %s - date: %s, delta: %s" % (current_item, today_date.year, today_date.day_digits, today_date.weekday, today_date.month, date_ago, date_ago_delta))
+					date_ago = date_ago_delta
+					skip_next = False
+				elif self.word_is_yesterday(current_item):
+					#print("word is 'yesterday' (%s)" % i)
+					yesterday_date = DateHelper(DateHelper.now())
+					yesterday_date.remove_days(1)
+					date_ago_delta = date_ago.replace(year=yesterday_date.year, month=yesterday_date.month_digits, day=yesterday_date.day_digits)
+					date_ago_delta_date = DateHelper(date_ago_delta)
+					print("[+] set date to '%s' - %s %s (%s) %s - date: %s, delta: %s" % (current_item, date_ago_delta_date.year, date_ago_delta_date.day_digits, date_ago_delta_date.weekday, date_ago_delta_date.month, date_ago, date_ago_delta))
+					date_ago = date_ago_delta
+					skip_next = False
+			# // mon, tue, wed, thu, fri, sat, sun
+			elif self.is_weekday_word(current_item):
+				print("next is weekday word (%s)" % next_item)
+				print("info - 'is_weekday_word' not implemented yet, ago_items[%s], '%s'" % (i, current_item))
+				skip_next = True
+				pass
+
+		self._date = date_ago
+		return True
+
+	def is_today(self, date):
+		return DateHelper.date_is_today(date)
+
+	def _is_relative_date(self):
+		if not self.has_relative_date_ago(self._date_string):
+			return False
+		
+		if self.has_weekday(self._date_string):
+			return True
+		elif self.has_month(self._date_string):
+			return True
+		elif self.has_relative_day(self._date_string):
+			return True
+		elif self.has_date_word(self._date_string):
+			return True
+		elif self.has_time_word(self._date_string):
+			return True
+		elif self.has_named_time(self._date_string):
+			return True
+		return False
+	def has_relative_date_ago(self, date_string):
+		if self._endswith_ago(date_string):
+			return True
+		return False
+	def _endswith_ago(self, date_string):
+		if date_string.lower().endswith(".ago") or date_string.lower().endswith(" ago"):
+			return True
+		return False
+	def has_relative_day(self, date_string):
+		if self.has_word_now(date_string):
+			return True
+		elif self.has_word_today(date_string):
+			return True
+		elif self.has_word_yesterday(date_string):
+			return True
+		return False
+	def is_relative_day(self, day):
+		if self.word_is_now(day):
+			return True
+		elif self.word_is_today(day):
+			return True
+		elif self.word_is_yesterday(day):
+			return True
+		return False
+	def has_named_time(self, date_string):
+		if "now" in date_string.lower():
+			return True
+		elif "noon" in date_string.lower():
+			return True
+		elif "midnight" in date_string.lower():
+			return True
+		elif "tea" in date_string.lower():
+			return True
+		elif "pm" in date_string.lower():
+			return True
+		elif "am" in date_string.lower():
+			return True
+		return False
+	def is_named_time(self, named_item):
+		if self.word_is_midnight(named_item):
+			return True
+		elif self.word_is_noon(named_item):
+			return True
+		elif self.word_is_tea(named_item):
+			return True
+		elif self.word_is_pm(named_item):
+			return True
+		elif self.word_is_am(named_item):
+			return True
+		return False
+	def has_time_word(self, date_string):
+		if "hour" in date_string.lower():
+			return True
+		elif "minute" in date_string.lower():
+			return True
+		elif "second" in date_string.lower():
+			return True
+		return False
+	def has_date_word(self, date_string):
+		if "year" in date_string.lower() or "years" in date_string.lower():
+			return True
+		elif "month" in date_string.lower() or "months" in date_string.lower():
+			return True
+		elif "week" in date_string.lower() or "weeks" in date_string.lower():
+			return True
+		elif "day" in date_string.lower() or "days" in date_string.lower():
+			return True
+		return False
+	def is_date_word(self, word):
+		if self.word_is_year(word):
+			return True
+		elif self.word_is_month(word):
+			return True
+		elif self.word_is_week(word):
+			return True
+		elif self.word_is_day(word):
+			return True
+		return False
+	def is_time_word(self, word):
+		if self.word_is_hour(word):
+			return True
+		elif self.word_is_min(word):
+			return True
+		elif self.word_is_sec(word):
+			return True
+		return False
+	def has_word_now(self, date_string):
+		if "now" in date_string.lower():
+			return True
+		return False
+	def has_word_today(self, date_string):
+		if "today" in date_string.lower():
+			return True
+		return False
+	def has_word_yesterday(self, date_string):
+		if "yesterday" in date_string.lower():
+			return True
+		return False
+
+	def word_is_now(self, word):
+		if "now" == word.lower():
+			return True
+		return False
+	def word_is_today(self, word):
+		if "today" == word.lower():
+			return True
+		return False
+	def word_is_yesterday(self, word):
+		if "yesterday" == word.lower():
+			return True
+		return False
+	def word_is_year(self, word):
+		if "year" == word.lower() or "years" == word.lower():
+			return True
+		return False
+	def word_is_month(self, word):
+		if "month" == word.lower() or "months" == word.lower():
+			return True
+		return False
+	def word_is_week(self, word):
+		if "week" == word.lower() or "weeks" == word.lower():
+			return True
+		return False
+	def word_is_day(self, word):
+		if "day" == word.lower() or "days" == word.lower():
+			return True
+		return False
+	def word_is_hour(self, word):
+		if "hour" == word.lower() or "hours" == word.lower():
+			return True
+		return False
+	def word_is_min(self, word):
+		if "min" == word.lower() or "mins" == word.lower() or "minute" == word.lower() or "minutes" == word.lower():
+			return True
+		return False
+	def word_is_sec(self, word):
+		if "sec" == word.lower() or "secs" == word.lower() or "second" == word.lower() or "seconds" == word.lower():
+			return True
+		return False
+	def word_is_midnight(self, word):
+		if "midnight" == word.lower():
+			return True
+		return False
+	def word_is_noon(self, word):
+		if "noon" == word.lower():
+			return True
+		return False
+	def word_is_tea(self, word):
+		if "tea" == word.lower():
+			return True
+		return False
+	def word_is_pm(self, word):
+		if "pm" == word.lower():
+			return True
+		return False
+	def word_is_am(self, word):
+		if "am" == word.lower():
+			return True
+		return False
+
+	def is_month_word(self, word):
+		if self.month_is_jan(word):
+			return True
+		elif self.month_is_feb(word):
+			return True
+		elif self.month_is_mar(word):
+			return True
+		elif self.month_is_apr(word):
+			return True
+		elif self.month_is_may(word):
+			return True
+		elif self.month_is_jun(word):
+			return True
+		elif self.month_is_jul(word):
+			return True
+		elif self.month_is_aug(word):
+			return True
+		elif self.month_is_sep(word):
+			return True
+		elif self.month_is_oct(word):
+			return True
+		elif self.month_is_nov(word):
+			return True
+		elif self.month_is_dec(word):
+			return True
+		return False
+	def is_weekday_word(self, word):
+		if self.weekday_is_mon(word):
+			return True
+		elif self.weekday_is_tue(word):
+			return True
+		elif self.weekday_is_wed(word):
+			return True
+		elif self.weekday_is_thu(word):
+			return True
+		elif self.weekday_is_fri(word):
+			return True
+		elif self.weekday_is_sat(word):
+			return True
+		elif self.weekday_is_sun(word):
+			return True
+		return False
+
+	def has_weekday(self, date_string):
+		if "monday" in date_string.lower():
+			return True
+		elif "tuesday" in date_string.lower():
+			return True
+		elif "wednesday" in date_string.lower():
+			return True
+		elif "thursday" in date_string.lower():
+			return True
+		elif "friday" in date_string.lower():
+			return True
+		elif "saturday" in date_string.lower():
+			return True
+		elif "sunday" in date_string.lower():
+			return True
+		return False
+	def weekday_is_mon(self, day):
+		if "monday" in day.lower() or "mon" in day.lower():
+			return True
+		return False
+	def weekday_is_tue(self, day):
+		if "tuesday" in day.lower() or "tue" in day.lower():
+			return True
+		return False
+	def weekday_is_wed(self, day):
+		if "wednesday" in day.lower() or "wed" in day.lower():
+			return True
+		return False
+	def weekday_is_thu(self, day):
+		if "thursday" in day.lower() or "thu" in day.lower():
+			return True
+		return False
+	def weekday_is_fri(self, day):
+		if "friday" in day.lower() or "fri" in day.lower():
+			return True
+		return False
+	def weekday_is_sat(self, day):
+		if "saturday" in day.lower() or "sat" in day.lower():
+			return True
+		return False
+	def weekday_is_sun(self, day):
+		if "sunday" in day.lower() or "sun" in day.lower():
+			return True
+		return False
+
+	def has_month(self, date_string):
+		if "january" in date_string.lower() or "jan" in date_string.lower():
+			return True
+		elif "february" in date_string.lower() or "feb" in date_string.lower():
+			return True
+		elif "march" in date_string.lower() or "mar" in date_string.lower():
+			return True
+		elif "april" in date_string.lower() or "apr" in date_string.lower():
+			return True
+		elif "may" in date_string.lower():
+			return True
+		elif "june" in date_string.lower() or "jun" in date_string.lower():
+			return True
+		elif "july" in date_string.lower() or "jul" in date_string.lower():
+			return True
+		elif "august" in date_string.lower() or "aug" in date_string.lower():
+			return True
+		elif "september" in date_string.lower() or "sep" in date_string.lower():
+			return True
+		elif "october" in date_string.lower() or "oct" in date_string.lower():
+			return True
+		elif "november" in date_string.lower() or "nov" in date_string.lower():
+			return True
+		elif "december" in date_string.lower() or "dec" in date_string.lower():
+			return True
+		return False
+	def month_is_jan(self, month):
+		if "january" == month.lower() or "jan" == month.lower():
+			return True
+		return False
+	def month_is_feb(self, month):
+		if "february" == month.lower() or "feb" == month.lower():
+			return True
+		return False
+	def month_is_mar(self, month):
+		if "march" == month.lower() or "mar" == month.lower():
+			return True
+		return False
+	def month_is_apr(self, month):
+		if "april" == month.lower() or "apr" == month.lower():
+			return True
+		return False
+	def month_is_may(self, month):
+		if "may" == month.lower():
+			return True
+		return False
+	def month_is_jun(self, month):
+		if "june" == month.lower() or "jun" == month.lower():
+			return True
+		return False
+	def month_is_jul(self, month):
+		if "july" == month.lower() or "jul" == month.lower():
+			return True
+		return False
+	def month_is_aug(self, month):
+		if "august" == month.lower() or "aug" == month.lower():
+			return True
+		return False
+	def month_is_sep(self, month):
+		if "september" == month.lower() or "sep" == month.lower():
+			return True
+		return False
+	def month_is_oct(self, month):
+		if "october" == month.lower() or "oct" == month.lower():
+			return True
+		return False
+	def month_is_nov(self, month):
+		if "november" == month.lower() or "nov" == month.lower():
+			return True
+		return False
+	def month_is_dec(self, month):
+		if "december" == month.lower() or "dec" == month.lower():
+			return True
+		return False
+
+	# // return date - 1 day
+	def date_to_yesterday(self, date):
+		pass
+
+	def relative_to_date(self, date):
+		pass
+# https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
+class DateHelper:
+	def __init__(self, date):
+		self._date = date
+	@property
+	def date(self):
+		return self._date
+
+	def as_string(self):
+		return DateHelper.date_to_string(self._date)
+	def as_time(self):
+		return self._date.strftime('%H:%M:%S')
+
+	@staticmethod
+	def now():
+		date_string = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+		return datetime.strptime(date_string, '%Y-%m-%d %H:%M:%S')
+		return DateHelper.string_to_date(date_string)
+
+	@staticmethod
+	def is_date_string(date):
+		if "str" == type(date).__name__:
+			return True
+		return False
+	@staticmethod
+	def is_date_type(date):
+		if "datetime" == type(date).__name__:
+			return True
+		return False
+
+	@staticmethod
+	def date_is_today(date):
+		today_date = DateHelper.now()
+		if date.year != today_date.year:
+			return False
+		if date.month != today_date.month:
+			return False
+		if date.day != today_date.day:
+			return False
+		return True
+	@staticmethod
+	def date_is_yesterday(date):
+		yesterday_date = DateHelper.remove_days_from(DateHelper.now(), 1)
+		if date.year != yesterday_date.year:
+			return False
+		if date.month != yesterday_date.month:
+			return False
+		if date.day != yesterday_date.day:
+			return False
+		return True
+	@property
+	def is_today(self):
+		today_date = DateHelper.now()
+		if self._date.year != today_date.year:
+			return False
+		if self._date.month != today_date.month:
+			return False
+		if self._date.day != today_date.day:
+			return False
+		return True
+	@property
+	def is_yesterday(self):
+		yesterday_date = DateHelper.remove_days_from(DateHelper.now(), 1)
+		if self._date.year != yesterday_date.year:
+			return False
+		if self._date.month != yesterday_date.month:
+			return False
+		if self._date.day != yesterday_date.day:
+			return False
+		return True
+
+	@staticmethod
+	def is_same_hour(date, other_date):
+		return date.hour == other_date.hour
+	def is_same_min(date, other_date):
+		return date.minutes == other_date.minutes
+
+	@staticmethod
+	def date_is_weekday_mon(date):
+		return "monday" == DateHelper.to_weekday(date).lower()
+	@staticmethod
+	def date_is_weekday_tue(date):
+		return "tuesday" == DateHelper.to_weekday(date).lower()
+	@staticmethod
+	def date_is_weekday_wed(date):
+		return "wednesday" == DateHelper.to_weekday(date).lower()
+	@staticmethod
+	def date_is_weekday_thu(date):
+		return "thursday" == DateHelper.to_weekday(date).lower()
+	@staticmethod
+	def date_is_weekday_fri(date):
+		return "friday" == DateHelper.to_weekday(date).lower()
+	@staticmethod
+	def date_is_weekday_sat(date):
+		return "saturday" == DateHelper.to_weekday(date).lower()
+	@staticmethod
+	def date_is_weekday_sun(date):
+		return "sunday" == DateHelper.to_weekday(date).lower()
+
+	@staticmethod
+	def date_is_month_jan(date):
+		if "january" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_feb(date):
+		if "february" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_mar(date):
+		if "march" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_apr(date):
+		if "april" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_may(date):
+		if "may" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_jun(date):
+		if "june" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_jul(date):
+		if "july" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_aug(date):
+		if "august" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_sep(date):
+		if "september" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_oct(date):
+		if "october" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_nov(date):
+		if "november" == DateHelper.to_month(date).lower():
+			return True
+		return False
+	@staticmethod
+	def date_is_month_dec(date):
+		if "december" == DateHelper.to_month(date).lower():
+			return True
+		return False
+
+	@property
+	def is_month_jan(self):
+		return "january" == self.month.lower()
+	@property
+	def is_month_feb(self):
+		return "february" == self.month.lower()
+	@property
+	def is_month_mar(self):
+		return "march" == self.month.lower()
+	@property
+	def is_month_apr(self):
+		return "april" == self.month.lower()
+	@property
+	def is_month_may(self):
+		return "may" == self.month.lower()
+	@property
+	def is_month_jun(self):
+		return "june" == self.month.lower()
+	@property
+	def is_month_jul(self):
+		return "july" == self.month.lower()
+	@property
+	def is_month_aug(self):
+		return "august" == self.month.lower()
+	@property
+	def is_month_sep(self):
+		return "september" == self.month.lower()
+	@property
+	def is_month_oct(self):
+		return "october" == self.month.lower()
+	@property
+	def is_month_nov(self):
+		return "november" == self.month.lower()
+	@property
+	def is_month_dec(self):
+		return "december" == self.month.lower()
+
+	@staticmethod
+	def month_to_digits(month):
+		if "january" == month.lower() or "jan" == month.lower():
+			return 1
+		elif "february" == month.lower() or "feb" == month.lower():
+			return 2
+		elif "march" == month.lower() or "mar" == month.lower():
+			return 3
+		elif "april" == month.lower() or "apr" == month.lower():
+			return 4
+		elif "may" == month.lower():
+			return 5
+		elif "june" == month.lower() or "jun" == month.lower():
+			return 6
+		elif "july" == month.lower() or "jul" == month.lower():
+			return 7
+		elif "august" == month.lower() or "aug" == month.lower():
+			return 8
+		elif "september" == month.lower() or "sep" == month.lower():
+			return 9
+		elif "october" == month.lower() or "oct" == month.lower():
+			return 10
+		elif "november" == month.lower() or "nov" == month.lower():
+			return 11
+		elif "december" == month.lower() or "dec" == month.lower():
+			return 12
+
+
+
+	@staticmethod
+	def string_to_date(date_string):
+		return datetime.strptime(date_string, '%Y-%m-%d %H:%M:%S')
+	@staticmethod
+	def date_to_string(date):
+		return date.strftime('%Y-%m-%d %H:%M:%S')
+
+	@staticmethod
+	def date_to_time(date):
+		return date.strftime('%H:%M:%S')
+	@staticmethod
+	def date_no_time(date):
+		return date.strftime('%Y-%m-%d')
+
+	@staticmethod
+	def to_year(date):
+		return date.year
+	@staticmethod
+	def to_month_digits(date):
+		return date.strftime('%m')
+	@staticmethod
+	def to_month(date):
+		return date.strftime("%B")
+	@staticmethod
+	def to_month_short(date):
+		return date.strftime("%b")
+	@staticmethod
+	def to_day_digits(date):
+		return date.strftime("%d")
+	@staticmethod
+	def to_weekday(date):
+		return date.strftime('%A')
+	@staticmethod
+	def to_weekday_short(date):
+		return date.strftime('%a')
+	@staticmethod
+	def to_week_number(date):
+		return datetime.date(date).strftime("%V")
+	@staticmethod
+	def to_hour_digits(date):
+		return date.strftime("%H")
+	@staticmethod
+	def to_minute_digits(date):
+		return date.strftime('%M')
+	
+	@property
+	def year(self):
+		return int(self._date.strftime("%Y"))
+	@property
+	def month_digits(self):
+		return int(self._date.strftime('%m'))
+	@property
+	def month(self):
+		return self._date.strftime("%B")
+	@property
+	def month_short(self):
+		return self._date.strftime("%b")
+	@property
+	def day_digits(self):
+		return int(self._date.strftime("%d"))
+	@property
+	def weekday(self):
+		return self._date.strftime('%A')
+	@property
+	def weekday_short(self):
+		return self._date.strftime('%a')
+	@property
+	def week_number(self):
+		return int(self._date.strftime("%V"))
+	@property
+	def hour_digits(self):
+		return int(self._date.strftime("%H"))
+	@property
+	def minute_digits(self):
+		return int(self._date.minute)
+
+	@staticmethod
+	def add_years_to(date, years):
+		return date + relativedelta(years=years)
+	@staticmethod
+	def remove_years_from(date, years):
+		return date - relativedelta(years=years)
+	@staticmethod
+	def add_months_to(date, months):
+		return date + relativedelta(months=months)
+	@staticmethod
+	def remove_months_from(date, months):
+		return date - relativedelta(months=months)
+	@staticmethod
+	def add_days_to(date, days):
+		return date + timedelta(days=days)
+	@staticmethod
+	def remove_days_from(date, days):
+		return date - timedelta(days=days)
+	@staticmethod
+	def add_weeks_to(date, weeks):
+		return date + timedelta(weeks=weeks)
+	@staticmethod
+	def remove_weeks_from(date, weeks):
+		return date - timedelta(weeks=weeks)
+	@staticmethod
+	def add_hours_to(date, hours):
+		return date + timedelta(hours=hours)
+	@staticmethod
+	def remove_hours_from(date, hours):
+		return date - timedelta(hours=hours)
+	@staticmethod
+	def add_minutes_to(date, minutes):
+		return date + timedelta(minutes=minutes)
+	@staticmethod
+	def remove_minutes_from(date, minutes):
+		return date - timedelta(minutes=minutes)
+	@staticmethod
+	def add_seconds_to(date, seconds):
+		return date + timedelta(seconds=seconds)
+	@staticmethod
+	def remove_seconds_from(date, seconds):
+		return date - timedelta(seconds=seconds)
+
+	def add_years(self, years):
+		self._date = self._date + relativedelta(years=years)
+	def remove_years(self, years):
+		self._date = self._date - relativedelta(years=years)
+	def add_months(self, months):
+		self._date = self._date + relativedelta(months=months)
+	def remove_months(self, months):
+		self._date = self._date - relativedelta(months=months)
+	def add_days(self, days):
+		self._date = self._date + timedelta(days=days)
+	def remove_days(self, days):
+		self._date = self._date - timedelta(days=days)
+	def add_weeks(self, weeks):
+		self._date = self._date + timedelta(weeks=weeks)
+	def remove_weeks(self, weeks):
+		self._date = self._date - timedelta(weeks=weeks)
+	def add_hours(self, hours):
+		self._date = self._date + timedelta(hours=hours)
+	def remove_hours(self, hours):
+		self._date = self._date - timedelta(hours=hours)
+	def add_minutes(self, minutes):
+		self._date = self._date + timedelta(minutes=minutes)
+	def remove_minutes(self, minutes):
+		self._date = self._date - timedelta(minutes=minutes)
+	def add_seconds(self, seconds):
+		self._date = self._date + timedelta(seconds=seconds)
+	def remove_seconds(self, seconds):
+		self._date = self._date - timedelta(seconds=seconds)
+	
+	
+# // steal date formats from 'git'
+"""
+git log --since="<year-month-day>"
+# --since=<date>, --after=<date>
+# Show commit messages since <date>
+# Show commits more recent than a specific date.
+# ex. git log --since="2016-10-07"
+
+git log --oneline --after=1.week.ago
+git log --oneline --format="%h %an (%ar) - %s" --after=2.day.ago
+git log --since="2.weeks.ago"
+# gets the list of commits made in the last two weeks
+git log --since="2.weeks.ago" --until="2.weeks.3.days.ago"
+git log --until="2.weeks.ago" --since="2.weeks.3.days.ago"
+2 years 1 day 3 minutes ago
+# gets the list of commits made (between) after 2 weeks and 3 days after that
+# from 2 weeks ago, to 3 days ago
+# Timed reflogs
+# Filter reflog by time
+# http://alblue.bandlem.com/2011/05/git-tip-of-week-reflogs.html
+# Working with dates in Git
+# https://alexpeattie.com/blog/working-with-dates-in-git
+# Specification for syntax of git dates
+# http://stackoverflow.com/questions/14023794/specification-for-syntax-of-git-dates
+# 
+# Various supported forms include:
+**** relative dates
+** ex.
+* today
+* 1 month 2 days ago
+* six minutes ago
+# You can include days of the week ("last Tuesday"),
+# timezones ("3PM GMT") and
+# 'named' times ("noon", "tea time").
+<number>.relative
+* 1.minute.ago
+* 1.hour.ago
+* 1.day.ago
+* 1.week.ago
+* 1.month.ago
+* 1.year.ago
+* yesterday
+* noon
+* midnight
+* tea
+* PM
+* AM
+* never
+* now
+**** specific date, fixed dates (in any format)
+** ex.
+* 10-11-1998
+* Fri Jun 4 15:46:55 2010 +0200
+* 9/9/83
+<year>-<month>-<day>(.<hour>:<minute>:<second>)
+* 2011-05-17.09:00:00
+* 2011-05-17
+**** examples
+git log --since=midnight
+# get commits from all of today
+git log --since="2 weeks ago"
+# Show the changes during the last two weeks
+
+# The plural forms are also accepted (e.g. 2.weeks.ago)
+# as well as combinations (e.g. 1.day.2.hours.ago).
+# 
+# The time format is most useful if you want to get back to a branch's state as of an hour ago,
+# or want to see what the differences were in the last hour (e.g. git diff @{1.hour.ago}).
+# Note that if a branch is missing, then it assumes the current branch (so @{1.hour.ago}
+# refers to master@{1.hour.ago} if on the branch master.
+"""
 
 class ShodanAPI:
 	def __init__(self):
@@ -59,7 +995,7 @@ class ShodanAPI:
 			self._error_msg = e
 		return data
 
-	# // domain_info costs 1 credit by query
+	# // the 'domain_info' api costs 1 credit by query
 	def domain_info(self, domain, history=False, type="A"):
 		data = None
 		try:
@@ -89,6 +1025,11 @@ class ShodanSettings:
 		self.settings['Match_On_Ports'] = []
 		self.settings['Match_On_Modules'] = []
 		self.settings['Filter_Out_Ports'] = []
+
+		self.settings['Date_Since'] = None
+		self.settings['Date_After'] = None
+		self.settings['Date_Until'] = None
+		self.settings['Date_Before'] = None
 		
 		self.init(args)
 
@@ -116,7 +1057,16 @@ class ShodanSettings:
 			for port in args.filter_out_ports.split(','):
 				self.settings['Filter_Out_Ports'].append(int(port.strip()))
 
-class ShodanEx:
+		if args.date_since is not None:
+			self.settings['Date_Since'] = args.date_since
+		if args.date_after is not None:
+			self.settings['Date_After'] = args.date_after
+		if args.date_until is not None:
+			self.settings['Date_Until'] = args.date_until
+		if args.date_before is not None:
+			self.settings['Date_Before'] = args.date_before
+
+class ShodanCli:
 	def __init__(self, args):
 		self.settings = ShodanSettings(args).settings
 		self.api = ShodanAPI()
@@ -191,6 +1141,10 @@ class ShodanEx:
 			return False
 	def _target_is_cache_index(self, target):
 		if target.isnumeric():
+			return True
+		return False
+	def _target_is_domain_host(self, target):
+		if '.' in target and not self._target_is_ip_address(target):
 			return True
 		return False
 	def _target_is_cached(self, target):
@@ -1005,11 +1959,11 @@ def ip_to_host(ip):
 def main(args):
 	#host = "119.45.94.71"
 
-	shodan = ShodanEx(args)
-	if args.target is not None:
+	shodan = ShodanCli(args)
+	if shodan.settings['Target'] is not None:
 		# // resolve host/domain to ip address
-		if not shodan._target_is_ip_address(args.target) and not shodan._target_is_cache_index(args.target):
-			# // domain_info costs 1 credit by query
+		#if not shodan._target_is_ip_address(args.target) and not shodan._target_is_cache_index(args.target):
+		if shodan._target_is_domain_host(shodan.settings['Target']):
 			"""
 			data = shodan.api.domain_info(args.target)
 			if shodan.api.has_error:
@@ -1024,6 +1978,7 @@ def main(args):
 			if shodan.settings['Verbose_Mode']:
 				print(json.dumps(data, indent=4))
 			"""
+			# // using the domain_info api costs 1 credit by query
 			# // lets use "free" resolve solution instead
 			host_ip = host_to_ip(shodan.settings['Target'])
 			if host_ip is not None:
@@ -1035,14 +1990,17 @@ def main(args):
 				print("[!] Target '%s' failed to resolve to IP Address, skipping target" % shodan.settings['Target'])
 				return
 
+		# // set target based on cache index
+		elif shodan._target_is_cache_index(shodan.settings['Target']):
+			cached_target = shodan._get_target_by_cache_index(shodan.settings['Target'])
+			if cached_target is None:
+				print("[!] Failed to get target by cache index '%s', skipping target" % shodan.settings['Target'])
+				return
+			shodan.settings['Target'] = cached_target
+			cache_file = shodan._get_out_path(shodan._target_as_out_file(shodan.settings['Target']))
+			shodan.settings['Cache_File'] = cache_file
+			#_set_cache_file_by_target
 
-	# // set target based on cache index
-	if shodan.settings['Target'] is not None and shodan._target_is_cache_index(shodan.settings['Target']):
-		shodan.settings['Target'] = shodan._get_target_by_cache_index(shodan.settings['Target'])
-		if shodan.settings['Target'] is None:
-			return
-		cache_file = shodan._get_out_path(shodan._target_as_out_file(shodan.settings['Target']))
-		shodan.settings['Cache_File'] = cache_file
 
 	if args.remove_target_from_cache:
 		if shodan._target_is_cached(shodan.settings['Target']):
@@ -1104,23 +2062,116 @@ def main(args):
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
 
-	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit")
+	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit, use '-v' for verbose output")
 	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
 	parser.add_argument('-t', dest='target', help='Host or IP address (or cache index) of the target to lookup')
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
-	parser.add_argument('-C', '--cache-dir', dest='cache_dir', default='shodan-data', help="store cache to directory, default 'shodan-data'")
 	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit, use '-F' to re-cache")
-	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
-	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
-	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history")
+	parser.add_argument('-C', '--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data'")
+	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history" +
+		"\n\n")
+	parser.add_argument('-mp', '--match-ports', metavar="port[,port,...]", dest='match_on_ports', help='Match on port, comma separated list')
+	parser.add_argument('-mm', '--match-module', metavar="module(s)", dest='match_on_modules', help='Match on module, comma separated list (ex. ssh,http,https)')
+	parser.add_argument('-fp', '--filter-ports', metavar="port(s)", dest='filter_out_ports', help="Filter out port, comma separated list" +
+		"\n\n")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
 	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
-	parser.add_argument('-mp', '--match-ports', dest='match_on_ports', help='Match on ports, comma separated list')
-	parser.add_argument('-mm', '--match-module', dest='match_on_modules', help='Match on modules, comma separated list')
-	parser.add_argument('-fp', '--filter-ports', dest='filter_out_ports', help='Filter out ports, comma separated list')
 	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
-	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json")
+	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json" +
+		"\n\n")
+	parser.add_argument('--since', dest='date_since', metavar="<date-from>", help="List cached targets since (before) 'date-from'")
+	parser.add_argument('--after', dest='date_after', metavar="<after-date>", help="List cached targets after the given date, see 'date-format'")
+	parser.add_argument('--until', dest='date_until', metavar="<date-to>", help="List cached targets until 'date-to', from now and up to date")
+	parser.add_argument('--before', dest='date_before', metavar="<before-date>", help="List cached targets before 'date-format'" +
+		"\n\n" +
+		"supported date-formats:\n" +
+		"- <year>-<month>-<day> / YYYY-DD-MM, ex 2021-03-20\n" +
+		"- <number>.<pronom>.ago, ex 2.days.ago, 1.day.ago\n" +
+		"- Apr 1 2021 / 2 weeks ago / 2.weeks.ago\n" +
+		"number of Y(ear)(s), M(onth)(s), D(ay)(s), h(our)(s), m/min(s),minute(s), s/sec(s)/second(s)")
+	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
+	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 
 	args = parser.parse_args()
 	main(args)
+	"""
+	#print(DateHelper.now())
+	#dh = DateHelper(DateHelper.now())
+	now_date = DateHelper.now()
+	print("now_date(type: %s): %s" % (type(now_date).__name__, now_date))
+
+	dh = DateHelper(DateHelper.now())
+	print("dh.date: %s" % dh.date)
+	print("dh - year-month-day: %s-%s-%s" % (dh.year, dh.month_digits, dh.day_digits))
+	print("dh - date: %s %s %s %s (%s)" % (dh.year, dh.month_digits, dh.month, dh.day_digits, dh.weekday))
+	dh_2 = DateHelper(DateHelper.remove_months_from(dh.date, 2))
+	print("dh_2 - date: %s %s %s %s (%s)" % (dh_2.year, dh_2.month_digits, dh_2.month, dh_2.day_digits, dh_2.weekday))
+	#now_date = dh.string_to_date(DateHelper.now())
+	print("")
+	print("now: %s\n" % now_date)
+	print("to_year(%s): %s" % (dh.as_string(), DateHelper.to_year(dh.date)))
+
+	print("year: %s" % dh.year)
+	print("dh.date.year: %s" % dh.date.year)
+	print("month: %s" % DateHelper.to_month(DateHelper.now()))
+	print("month: %s" % dh.month)
+	print("month_short: %s" % DateHelper.to_month_short(DateHelper.now()))
+	print("month_short: %s" % dh.month_short)
+	print("month_digits: %s" % DateHelper.to_month_digits(DateHelper.now()))
+	print("month_digits: %s" % dh.month_digits)
+	print("day_digits: %s" % dh.to_day_digits(DateHelper.now()))
+	print("day_digits: %s" % dh.day_digits)
+	
+	print("now_date: %s" % now_date)
+	print("year + 1: %s" % DateHelper.date_to_string(DateHelper.add_years_to(now_date, 1)))
+	print("year - 1: %s" % DateHelper.date_to_string(DateHelper.remove_years_from(now_date, 1)))
+	print("month + 1: %s" % DateHelper.date_to_string(DateHelper.add_months_to(now_date, 1)))
+	print("month - 1: %s" % DateHelper.date_to_string(DateHelper.remove_months_from(now_date, 1)))
+	print("day + 1: %s" % DateHelper.date_to_string(DateHelper.add_days_to(now_date, 1)))
+	print("day - 1: %s" % DateHelper.date_to_string(DateHelper.remove_days_from(now_date, 1)))
+	print("week + 1: %s" % DateHelper.date_to_string(DateHelper.add_weeks_to(now_date, 1)))
+	print("week - 1: %s" % DateHelper.date_to_string(DateHelper.remove_weeks_from(now_date, 1)))
+	print("hour + 1: %s" % DateHelper.date_to_string(DateHelper.add_hours_to(now_date, 1)))
+	print("hour - 1: %s" % DateHelper.date_to_string(DateHelper.remove_hours_from(now_date, 1)))
+	print("min + 1: %s" % DateHelper.date_to_string(DateHelper.add_minutes_to(now_date, 1)))
+	print("min - 1: %s" % DateHelper.date_to_string(DateHelper.remove_minutes_from(now_date, 1)))
+	print("sec + 1: %s" % DateHelper.date_to_string(DateHelper.add_seconds_to(now_date, 1)))
+	print("sec - 1: %s" % DateHelper.date_to_string(DateHelper.remove_seconds_from(now_date, 1)))
+
+	print("now_date.weekday: %s" % DateHelper.to_weekday(now_date))
+	now_date_but_later = DateHelper.add_days_to(DateHelper.add_weeks_to(now_date, 1), 1)
+	print("now_date_but_later.weekday: %s" % DateHelper.to_weekday(now_date_but_later))
+	
+	print("weekday: %s" % DateHelper.to_weekday(DateHelper.now()))
+	print("weekday: %s" % dh.weekday)
+	print("weekday_short: %s" % DateHelper.to_weekday_short(DateHelper.now()))
+	print("weekday_short: %s" % dh.weekday_short)
+	print("week_number: %s" % DateHelper.to_week_number(DateHelper.now()))
+	print("week_number: %s" % dh.week_number)
+
+	print("hour_digits: %s" % DateHelper.to_hour_digits(DateHelper.now()))
+	print("hour_digits: %s" % dh.hour_digits)
+	print("minute_digits: %s" % DateHelper.to_minute_digits(DateHelper.now()))
+	print("minute_digits: %s" % dh.minute_digits)
+	print("as_time: %s" % dh.as_time())
+	print("date_to_time: %s" % dh.date_to_time(DateHelper.now()))
+	print("date_no_time: %s" % dh.date_no_time(DateHelper.now()))
+	print("is_weekday_sun: %s" % DateHelper.is_weekday_sun(DateHelper.now()))
+	print("is_month_aug: %s" % DateHelper.is_month_aug(DateHelper.now()))
+	"""
+
+	if args.date_since is not None:
+		# 1 week 1 day ago
+		# 1 week 1 hour 5 sec ago
+		# yesterday today now 2 year 1 month 1 week 1 day 2 hours 4 min 10 secs 10 dec 10 monday ago
+		date_string = args.date_since
+		old_date = DateHelper(DateHelper.now())
+		old_date.remove_years(2)
+		rel_date = RelativeDate(old_date.date, date_string)
+		print("\nRelativeDate(%s, %s)" % (rel_date._date, date_string))
+		if rel_date._is_relative_date():
+			if not rel_date.parse():
+				print("RelativeDate(): parse() returned false")
+			print("old_date: '%s'" % old_date.date)
+			print("rel_date: '%s'" % rel_date.date)
