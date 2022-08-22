@@ -9,7 +9,6 @@ import json
 import os
 from collections import OrderedDict
 from datetime import datetime, date, timedelta
-#from dateutil import relativedelta
 from dateutil.relativedelta import relativedelta
 import io
 from operator import attrgetter
@@ -18,28 +17,20 @@ import socket
 import re
 
 class RelativeDate:
-	today = "today"
-	yesterday = "yesterday"
-	week = "week"
-
-	def __init__(self, date, date_string):
+	def __init__(self, date):
 		self._date = date
-		self._date_string = date_string
 
 	@property
 	def date(self):
 		return self._date
 
-	def parse(self):
-		if not self._is_relative_date():
-			return False
-
-		if self._endswith_ago(self._date_string):
+	def parse(self, date_string):
+		if self._endswith_ago(date_string) and self.is_relative_date(date_string):
 			ago_items = None
-			if ' ' in self._date_string:
-				ago_items = self._date_string.split(" ")[0:-1]
-			elif '.' in self._date_string:
-				ago_items = self._date_string.split(".")[0:-1]
+			if ' ' in date_string:
+				ago_items = date_string.split(" ")[0:-1]
+			elif '.' in date_string:
+				ago_items = date_string.split(".")[0:-1]
 				if ago_items is None:
 					return False
 			return self.parse_ago(ago_items)
@@ -50,13 +41,11 @@ class RelativeDate:
 			return False
 
 		date_ago = self._date
-		previous_item = None
-		word_num = None
 		ago_items_count = len(ago_items)
 		skip_next = False
 		for i in range(0, len(ago_items)):
 			current_item = ago_items[i]
-			#print("- 1st ago_items(%s) '%s'" % (i, ago_items[i]))
+			print("- 1st ago_items(%s) '%s'" % (i, ago_items[i]))
 			if skip_next:
 				skip_next = False
 				print("[-] skipping ago_items(%s) '%s'" % (i, current_item))
@@ -159,21 +148,21 @@ class RelativeDate:
 	def is_today(self, date):
 		return DateHelper.date_is_today(date)
 
-	def _is_relative_date(self):
-		if not self.has_relative_date_ago(self._date_string):
+	def is_relative_date(self, date_string):
+		if not self.has_relative_date_ago(date_string):
 			return False
 		
-		if self.has_weekday(self._date_string):
+		if self.has_weekday(date_string):
 			return True
-		elif self.has_month(self._date_string):
+		elif self.has_month(date_string):
 			return True
-		elif self.has_relative_day(self._date_string):
+		elif self.has_relative_day(date_string):
 			return True
-		elif self.has_date_word(self._date_string):
+		elif self.has_date_word(date_string):
 			return True
-		elif self.has_time_word(self._date_string):
+		elif self.has_time_word(date_string):
 			return True
-		elif self.has_named_time(self._date_string):
+		elif self.has_named_time(date_string):
 			return True
 		return False
 	def has_relative_date_ago(self, date_string):
@@ -2164,14 +2153,23 @@ if __name__ == '__main__':
 	if args.date_since is not None:
 		# 1 week 1 day ago
 		# 1 week 1 hour 5 sec ago
-		# yesterday today now 2 year 1 month 1 week 1 day 2 hours 4 min 10 secs 10 dec 10 monday ago
+		# 2 year 1 month 1 week 1 day 2 hours 4 min 10 secs ago
+		# yesterday today now
+		# 10 dec 10 monday
+		# 2022-10-12
+		# 10 monday # unsupported
 		date_string = args.date_since
+		date_pattern = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$"
 		old_date = DateHelper(DateHelper.now())
 		old_date.remove_years(2)
-		rel_date = RelativeDate(old_date.date, date_string)
-		print("\nRelativeDate(%s, %s)" % (rel_date._date, date_string))
-		if rel_date._is_relative_date():
-			if not rel_date.parse():
+		date_no_time_string = DateHelper.date_no_time(old_date.date)
+		rel_date = RelativeDate(old_date.date)
+		print("\nRelativeDate(%s, %s)" % (rel_date.date, date_string))
+		if rel_date.is_relative_date(date_string):
+			if not rel_date.parse(date_string):
 				print("RelativeDate(): parse() returned false")
 			print("old_date: '%s'" % old_date.date)
 			print("rel_date: '%s'" % rel_date.date)
+		print(re.match(date_pattern, date_no_time_string))
+		if re.match(date_pattern, date_no_time_string):
+			print("found date '%s'" % date_no_time_string)
