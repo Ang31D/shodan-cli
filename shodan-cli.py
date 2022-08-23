@@ -10,6 +10,7 @@ import os
 from collections import OrderedDict
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
+import dateutil.parser as date_parser
 import io
 from operator import attrgetter
 from ipaddress import ip_address
@@ -496,6 +497,7 @@ class RelativeDate:
 		pass
 # https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
 class DateHelper:
+	DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
 	def __init__(self, date):
 		self._date = date
 	@property
@@ -506,6 +508,26 @@ class DateHelper:
 		return DateHelper.date_to_string(self._date)
 	def as_time(self):
 		return self._date.strftime('%H:%M:%S')
+
+	# // format (string) date and return as type 'datetime'
+	@staticmethod
+	def format_date(date, format):
+		formatted_date = date
+
+		try:
+			if "str" == type(formatted_date).__name__:
+				formatted_date = date_parser.parse(formatted_date).strftime(format)
+			elif "datetime" == type(formatted_date).__name__:
+				formatted_date = date_parser.parse(formatted_date.isoformat()).strftime(format)
+			else:
+				formatted_date = None
+		except:
+			formatted_date = None
+
+		if "str" == type(formatted_date).__name__:
+			formatted_date = datetime.strptime(formatted_date, format)
+
+		return formatted_date
 
 	@staticmethod
 	def now():
@@ -2173,12 +2195,18 @@ if __name__ == '__main__':
 		pattern_date_time = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$"
 		pattern_date_time_no_milisec = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
 		pattern_date_time_ISO_8061 = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}-[0-9]{2}:[0-9]{2}$"
+		pattern_date_time_ISO_8061_no_timezone = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$"
 		pattern_date_time_z = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+
+		pattern_time_has_milisec = "[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}"
+		pattern_has_time = "[0-9]{2}:[0-9]{2}:[0-9]{2}"
+
 		string_date = "2022-08-23"
 		string_date_time_no_milisec = "2022-08-23 02:08:10"
 		string_date_time = "2022-08-23 02:08:10.912150"
-		string_date_time_ISO_8061 = "2021-11-04T22:32:47.142354-10:00"
-		string_date_time_z = "2017-05-23T15:02:27Z"
+		string_date_time_ISO_8061 = "2022-08-23T22:32:47.912150-10:00"
+		string_date_time_ISO_8061_no_timezone = "2022-08-23T22:32:47.912150"
+		string_date_time_z = "2022-08-23T15:02:27Z"
 		if re.match(pattern_date, string_date):
 			print("found date (no time) '%s'" % string_date)
 		if re.match(pattern_date_time, string_date_time):
@@ -2187,5 +2215,40 @@ if __name__ == '__main__':
 			print("found date (time no milisec) '%s'" % string_date_time_no_milisec)
 		if re.match(pattern_date_time_ISO_8061, string_date_time_ISO_8061):
 			print("found date (time ISO 8061) '%s'" % string_date_time_ISO_8061)
+		if re.match(pattern_date_time_ISO_8061_no_timezone, string_date_time_ISO_8061_no_timezone):
+			print("found date (time ISO 8061, no_ timezone) '%s'" % string_date_time_ISO_8061_no_timezone)
 		if re.match(pattern_date_time_z, string_date_time_z):
 			print("found date (time Z) '%s'" % string_date_time_z)
+		print("[START] test for time and milisec")
+		print("[testing-string] '%s'" % string_date_time_no_milisec)
+		string_test_for_time = string_date_time_no_milisec
+		#if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
+		if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
+			print("has time '%s'" % string_test_for_time)
+		if re.match(pattern_time_has_milisec, string_test_for_time):
+			print("time has milisec '%s'" % string_test_for_time)
+		
+		print("[END] test for time and milisec")
+		
+		
+		# // test parsing unknown date format
+		print("* Format unknown date(s) as 'YYYY-DD-MM hh:mm:ss':")
+		unknown_date = datetime.today()
+		date_time_format = "%Y-%m-%d %H:%M:%S"
+		
+		custom_date = "2009/48"
+		custom_date = "Feb 17, 2009"
+		custom_date = "12/18/10"
+		custom_date = "Feb 17"
+		custom_date = "17022009"
+		#custom_date = "2014, Feb 17"
+		#DateHelper.DATETIME_FORMAT = "%s.%%f" % DateHelper.DATETIME_FORMAT
+		print("CUSTOM - %s = %s" % (DateHelper.format_date(custom_date, DateHelper.DATETIME_FORMAT), custom_date))
+		print("%s = %s" % (DateHelper.format_date(unknown_date, DateHelper.DATETIME_FORMAT), unknown_date))
+		print("%s = %s" % (DateHelper.format_date(unknown_date, date_time_format), unknown_date))
+		print("%s = %s" % (DateHelper.format_date(string_date, date_time_format), string_date))
+		print("%s = %s" % (DateHelper.format_date(string_date_time_no_milisec, date_time_format), string_date_time_no_milisec))
+		print("%s = %s" % (DateHelper.format_date(string_date_time, date_time_format), string_date_time))
+		print("%s = %s" % (DateHelper.format_date(string_date_time_ISO_8061, date_time_format), string_date_time_ISO_8061))
+		print("%s = %s" % (DateHelper.format_date(string_date_time_ISO_8061_no_timezone, date_time_format), string_date_time_ISO_8061_no_timezone))
+		print("%s = %s" % (DateHelper.format_date(string_date_time_z, date_time_format), string_date_time_z))
