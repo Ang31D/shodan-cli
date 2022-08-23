@@ -1691,8 +1691,8 @@ def out_shodan(shodan):
 				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
 			print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
 			# v-- [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
-			if service.product.is_cobaltstrike:
-				print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
+			#if service.product.is_cobaltstrike:
+			#	print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
 			# // HTTP Module
 			if service.is_web_service:
 				http_module = Module_HTTP(service)
@@ -2159,10 +2159,8 @@ if __name__ == '__main__':
 		# 2022-10-12
 		# 10 monday # unsupported
 		date_string = args.date_since
-		date_pattern = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$"
 		old_date = DateHelper(DateHelper.now())
 		old_date.remove_years(2)
-		date_no_time_string = DateHelper.date_no_time(old_date.date)
 		rel_date = RelativeDate(old_date.date)
 		print("\nRelativeDate(%s, %s)" % (rel_date.date, date_string))
 		if rel_date.is_relative_date(date_string):
@@ -2170,6 +2168,24 @@ if __name__ == '__main__':
 				print("RelativeDate(): parse() returned false")
 			print("old_date: '%s'" % old_date.date)
 			print("rel_date: '%s'" % rel_date.date)
-		print(re.match(date_pattern, date_no_time_string))
-		if re.match(date_pattern, date_no_time_string):
-			print("found date '%s'" % date_no_time_string)
+
+		pattern_date = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$"
+		pattern_date_time = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$"
+		pattern_date_time_no_milisec = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+		pattern_date_time_ISO_8061 = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}-[0-9]{2}:[0-9]{2}$"
+		pattern_date_time_z = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+		string_date = "2022-08-23"
+		string_date_time_no_milisec = "2022-08-23 02:08:10"
+		string_date_time = "2022-08-23 02:08:10.912150"
+		string_date_time_ISO_8061 = "2021-11-04T22:32:47.142354-10:00"
+		string_date_time_z = "2017-05-23T15:02:27Z"
+		if re.match(pattern_date, string_date):
+			print("found date (no time) '%s'" % string_date)
+		if re.match(pattern_date_time, string_date_time):
+			print("found date (with time) '%s'" % string_date_time)
+		if re.match(pattern_date_time_no_milisec, string_date_time_no_milisec):
+			print("found date (time no milisec) '%s'" % string_date_time_no_milisec)
+		if re.match(pattern_date_time_ISO_8061, string_date_time_ISO_8061):
+			print("found date (time ISO 8061) '%s'" % string_date_time_ISO_8061)
+		if re.match(pattern_date_time_z, string_date_time_z):
+			print("found date (time Z) '%s'" % string_date_time_z)
