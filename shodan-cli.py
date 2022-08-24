@@ -1659,7 +1659,7 @@ def filter_out_service(shodan, service):
 		if '-' in module_name:
 			module_name = module_name.split('-')[0]
 		#if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
-		if service.module_name not in shodan.settings['Match_On_Modules'] or module_name not in shodan.settings['Match_On_Modules']:
+		if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
 			return True
 	if len(shodan.settings['Filter_Out_Modules']) > 0:
 		module_name = service.module_name
