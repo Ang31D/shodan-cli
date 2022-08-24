@@ -2239,14 +2239,12 @@ if __name__ == '__main__':
 		
 		# // test parsing unknown date format
 		print("* Format unknown date(s) as 'YYYY-DD-MM hh:mm:ss':")
-		#custom_date = "2014, Feb 17"
-		#DateHelper.DATETIME_FORMAT = "%s.%%f" % DateHelper.DATETIME_FORMAT
 		format_as_date_time = "%Y-%m-%d %H:%M:%S"
 		format_as_date_time_milisec = "%Y-%m-%d %H:%M:%S.%f"
 		print("* Static test - using function 'test_formate_date()'")
 		test_formate_date(format_as_date_time_milisec, "12/18/10 02:08:10.912150-10:00")
+		test_formate_date(format_as_date_time_milisec, "12/18/10 02:08:10.9")
 		test_formate_date(format_as_date_time_milisec, "12/18/10 02:08:10")
-		print("%s = %s" % (DateHelper.format_date("Feb 17", format_as_date_time), "Feb 17"))
 		test_formate_date(DateHelper.DATETIME_FORMAT, datetime.today())
 		test_formate_date(format_as_date_time, "2009/48")
 		test_formate_date(format_as_date_time, "Feb 17, 2009")
