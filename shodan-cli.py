@@ -36,8 +36,47 @@ class RelativeDate:
 				if ago_items is None:
 					return False
 			return self.parse_ago(ago_items)
+		elif self._startswith_last(date_string):
+			last_items = None
+			if ' ' in date_string:
+				last_items = date_string.split(" ")[1:]
+			elif '.' in date_string:
+				last_items = date_string.split(".")[1:]
+				if last_items is None:
+					return False
+			return self.parse_last(last_items)
 		return False
 
+	def parse_last(self, last_items):
+		if last_items is None:
+			return False
+		print("parse_last '%s', len=%s" % (last_items, len(last_items)))
+		return self._remove_from_date(last_items)
+	def _remove_from_date(self, range_items):
+		change_date = self._date
+		if len(range_items) == 1:
+			word = range_items[0]
+			print("_remove_from_date.word '%s'" % word)
+			if word.endswith("s"):
+				print("_remove_from_date removing 's' from '%s'" % word)
+				word = word[0:-1]
+			#if self.word_is_month(word):
+			#	range_items.insert(0, 1)
+			#	date_ago_delta = DateHelper.remove_months_from(change_date, 1)
+			#	print("[+] remove '%s %s' - date: %s, delta: %s" % (1, word, change_date, date_ago_delta))
+			#	change_date = date_ago_delta
+			if self.is_date_word(word):
+				range_items.insert(0, 1)
+				print("_remove_from_date change '%s' to '1 %s'" % (range_items[0], range_items[1]))
+		elif len(range_items) == 2:
+			print("YES")
+			if "int" == type(range_items[0]).__name__ and "str" == type(range_items[1]).__name__:
+				word_num = range_items[0]
+				word = range_items[1]
+				print("_remove_from_date '%s %s'" % (word_num, word))
+
+		self._date = change_date
+		return True
 	def parse_ago(self, ago_items):
 		if ago_items is None:
 			return False
@@ -173,6 +212,10 @@ class RelativeDate:
 		return False
 	def _endswith_ago(self, date_string):
 		if date_string.lower().endswith(".ago") or date_string.lower().endswith(" ago"):
+			return True
+		return False
+	def _startswith_last(self, date_string):
+		if date_string.lower().startswith("last.") or date_string.lower().startswith("last "):
 			return True
 		return False
 	def has_relative_day(self, date_string):
@@ -2254,6 +2297,7 @@ def testing(args):
 		test_date_management(args)
 
 	if args.time_range:
+		print("START of RelativeDate ('--time')")
 		time_range = args.time_range
 		if type(time_range).__name__ == "list":
 			time_range = ' '.join(time_range).replace('"', "")
@@ -2267,7 +2311,13 @@ def testing(args):
 				print("RelativeDate(): parse() returned false")
 			print("date_now: '%s'" % date_now.date)
 			print("rel_date: '%s'" % rel_date.date)
-		print("END of RelativeDate ('--since')\n")
+		if rel_date._startswith_last(time_range):
+			print("'%s' startswith 'last'" % time_range)
+			if not rel_date.parse(time_range):
+				print("RelativeDate(): parse() returned false")
+			print("date_now: '%s'" % date_now.date)
+			print("rel_date: '%s'" % rel_date.date)
+		print("END of RelativeDate ('--time')\n")
 
 def test_pattern(args):
 	print("START of 'pattern'")
