@@ -2233,7 +2233,8 @@ if __name__ == '__main__':
 		#if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
 		if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
 			print("has time '%s'" % string_test_for_time)
-		if re.match(pattern_time_has_milisec, string_test_for_time):
+		string_test_for_time = string_date_time
+		if re.match(".*%s.*" % pattern_time_has_milisec, string_test_for_time):
 			print("time has milisec '%s'" % string_test_for_time)
 		print("[END] test for time and milisec\n")
 		
