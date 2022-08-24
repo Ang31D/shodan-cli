@@ -2252,6 +2252,23 @@ def testing(args):
 		test_pattern(args)
 		# // test parsing unknown date format
 		test_date_management(args)
+
+	if args.time_range:
+		time_range = args.time_range
+		if type(time_range).__name__ == "list":
+			time_range = ' '.join(time_range).replace('"', "")
+		print("time_range '%s'" % time_range)
+		date_now = DateHelper(DateHelper.now())
+		print("date_now: %s" % date_now.date)
+		rel_date = RelativeDate(date_now.date)
+		print("RelativeDate(%s, %s)" % (rel_date.date, time_range))
+		if rel_date.is_relative_date(time_range):
+			if not rel_date.parse(time_range):
+				print("RelativeDate(): parse() returned false")
+			print("date_now: '%s'" % date_now.date)
+			print("rel_date: '%s'" % rel_date.date)
+		print("END of RelativeDate ('--since')\n")
+
 def test_pattern(args):
 	print("START of 'pattern'")
 	pattern_date = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$"
@@ -2331,6 +2348,7 @@ def test_date_management(args):
 	date_list.append("2018-10-29 07:30:20 PM")
 	date_list.append("12:00:00")
 	date_list.append("12:00")
+	date_list.append("2022-08-24T20:16:25.864+02:00")
 	for date in date_list:
 		print("(format '%s') %s <- %s" % (date_time_format, DateHelper.format_date(date, date_time_format), date))
 	print("")
@@ -2369,7 +2387,7 @@ if __name__ == '__main__':
 	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
 	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json" +
 		"\n\n")
-	parser.add_argument('--time', dest='time_frame', metavar="<datetime range>", help="List cached targets matching range")
+	parser.add_argument('--time', dest='time_range', metavar="<datetime range>", type=str, nargs="*", help="List cached targets matching range")
 	parser.add_argument('--since', dest='date_since', metavar="<date-from>", help="List cached targets since (before) 'date-from'")
 	parser.add_argument('--after', dest='date_after', metavar="<after-date>", help="List cached targets after the given date, see 'date-format'")
 	parser.add_argument('--until', dest='date_until', metavar="<date-to>", help="List cached targets until 'date-to', from now and up to date")
