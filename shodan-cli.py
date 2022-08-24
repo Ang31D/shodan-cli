@@ -2,7 +2,8 @@
 
 from shodan import Shodan
 from shodan.helpers import get_ip
-from shodan.cli.helpers import get_api_key
+#from shodan.cli.helpers import get_api_key
+from shodan.cli.helpers import get_api_key as shodan_api_key
 
 import argparse
 import json
@@ -497,7 +498,8 @@ class RelativeDate:
 		pass
 # https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
 class DateHelper:
-	DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"
+	DATETIME_FORMAT_STANDARD = "%Y-%m-%d %H:%M:%S"
+	DATETIME_FORMAT_MILISEC = "%Y-%m-%d %H:%M:%S.%f"
 	def __init__(self, date):
 		self._date = date
 	@property
@@ -511,21 +513,21 @@ class DateHelper:
 
 	# // format (string) date and return as type 'datetime'
 	@staticmethod
-	def format_date(date, format):
+	def format_date(date, date_format):
 		formatted_date = date
 
 		try:
 			if "str" == type(formatted_date).__name__:
-				formatted_date = date_parser.parse(formatted_date).strftime(format)
+				formatted_date = date_parser.parse(formatted_date).strftime(date_format)
 			elif "datetime" == type(formatted_date).__name__:
-				formatted_date = date_parser.parse(formatted_date.isoformat()).strftime(format)
+				formatted_date = date_parser.parse(formatted_date.isoformat()).strftime(date_format)
 			else:
 				formatted_date = None
 		except:
 			formatted_date = None
 
 		if "str" == type(formatted_date).__name__:
-			formatted_date = datetime.strptime(formatted_date, format)
+			formatted_date = datetime.strptime(formatted_date, date_format)
 
 		return formatted_date
 
@@ -969,11 +971,15 @@ class ShodanAPI:
 		self._error_msg = None
 		# Setup the Shodan API connection
 		try:
-			self._api = Shodan(get_api_key())
+			#self._api = Shodan(get_api_key())
+			self._api = Shodan(shodan_api_key())
 			self._init = True
 		except Exception as e:
 			self._error_msg = e
 
+	@property
+	def api_key(self):
+		return shodan_api_key()
 	@property
 	def is_available(self):
 		return self._init
@@ -989,10 +995,22 @@ class ShodanAPI:
 	def _reset_error_msg(self):
 		self._error_msg = None
 
+	""" 
+	reference: https://developer.shodan.io/api
+	"""
 	def info(self):
 		data = None
 		try:
 			data = self._api.info()
+		except Exception as e:
+			self._error_msg = e
+		return data
+
+	@property
+	def account_profile(self):
+		data = None
+		try:
+			data = self._api._request('/account/profile', {})
 		except Exception as e:
 			self._error_msg = e
 		return data
@@ -1952,23 +1970,53 @@ def out_shodan_api_info(shodan):
 		shodan.api._reset_error_msg()
 		return
 	print("Shodan API Info\n%s" % (("-"*len("Shodan API Info"))))
-	#api_info = json.load(api_info)
+	print("Plan: %s\n" % (api_info['plan']))
 	
 	scan_credits = int(api_info['scan_credits'])
-	print("Scan Credits (left): %s" % (scan_credits))
-
 	limits_scan_credits = int(api_info['usage_limits']['scan_credits'])
+	query_credits = int(api_info['query_credits'])
 	limits_query_credits = int(api_info['usage_limits']['query_credits'])
 	limits_monitored_ips = int(api_info['usage_limits']['monitored_ips'])
-	out_data = "* Credit Limits"
-	out_data = "%s\nScan: %s" % (out_data, limits_scan_credits)
-	out_data = "%s\nQuery: %s" % (out_data, limits_query_credits)
-
-	print(out_data)
+	unlocked_left = int(api_info['unlocked_left'])
+	out_data = "* Credit Limits (left)"
+	out_data = "%s\nScan: %s/%s" % (out_data, scan_credits, limits_scan_credits)
+	out_data = "%s\nQuery: %s/%s" % (out_data, query_credits, limits_query_credits)
+	out_data = "%s\nMonitored IPs: /%s" % (out_data, limits_monitored_ips)
+	out_data = "%s\nUnlocked left: %s/?" % (out_data, unlocked_left)
+	monitored_ips = api_info['monitored_ips']
+	if monitored_ips is not None or monitored_ips is None:
+		out_data = "%s\n\n* Monitored IPs\n%s" % (out_data, monitored_ips)
 	
+	print(out_data)
 
 	if shodan.settings['Verbose_Mode']:
-		print(json.dumps(api_info, indent=4))
+		print("\n%s" % json.dumps(api_info, indent=4))
+def out_shodan_account_profile(shodan):
+	#profile_data = shodan.api._api._request('/account/profile', {})
+	#print(profile_data)
+	#print("\n%s" % json.dumps(profile_data, indent=4))
+
+	profile_data = shodan.api.account_profile
+	if shodan.api.has_error:
+		print("[!] shodan api error '%s'" % shodan.api.error_msg)
+		shodan.api._reset_error_msg()
+		return
+	#print(profile_data)
+	#print("\n%s" % json.dumps(profile_data, indent=4))
+	#{'member': True, 'credits': 20, 'display_name': None, 'created': '2019-03-05T21:54:48.445000'}
+	out_data = "Shodan Account Profile\n%s" % (("-"*len("Shodan Account Profile")))
+	out_data = "%s\nMember: %s" % (out_data, profile_data['member'])
+	out_data = "%s\nDisplay Name: %s" % (out_data, profile_data['display_name'])
+	create_date = DateHelper.format_date(profile_data['created'], DateHelper.DATETIME_FORMAT_STANDARD)
+	out_data = "%s\nCreated: %s" % (out_data, create_date)
+	out_data = "%s\nCredits: %s" % (out_data, int(profile_data['credits']))
+	
+
+	print(out_data)
+
+	if shodan.settings['Verbose_Mode']:
+		print("\n%s" % json.dumps(profile_data, indent=4))
+	
 def host_to_ip(hostname):
 	host_ip = None
 	try:
@@ -2042,6 +2090,9 @@ def main(args):
 	if args.out_api_info:
 		out_shodan_api_info(shodan)
 		return
+	if args.out_account_profile:
+		out_shodan_account_profile(shodan)
+		return
 
 	if args.list_cache:
 		if shodan.settings['Target'] is not None:
@@ -2089,48 +2140,7 @@ def main(args):
 
 	out_shodan(shodan)
 
-def test_formate_date(date_time_format, date):
-	print("(format '%s') %s <- %s" % (date_time_format, DateHelper.format_date(date, date_time_format), date))
-
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
-
-	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit, use '-v' for verbose output")
-	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
-	parser.add_argument('-t', dest='target', help='Host or IP address (or cache index) of the target to lookup')
-	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
-	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit, use '-F' to re-cache")
-	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data'")
-	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history" +
-		"\n\n")
-	parser.add_argument('-mp', '--match-ports', metavar="port[,port,...]", dest='match_on_ports', help='Match on port, comma separated list')
-	parser.add_argument('-ms', '--match-service', metavar="service(s)", dest='match_on_modules', help='Match on service type, comma separated list (ex. ssh,http,https)')
-	parser.add_argument('-fp', '--filter-port', metavar="port(s)", dest='filter_out_ports', help="Filter out port, comma separated list")
-	parser.add_argument('-fm', '--filter-service', metavar="service(s)", dest='filter_out_modules', help='Filter out service type, comma separated list (ex. ssh,http,https)' +
-		"\n\n")
-	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
-	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
-	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
-	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json" +
-		"\n\n")
-	parser.add_argument('--time', dest='time_frame', metavar="<datetime range>", help="List cached targets matching range")
-	parser.add_argument('--since', dest='date_since', metavar="<date-from>", help="List cached targets since (before) 'date-from'")
-	parser.add_argument('--after', dest='date_after', metavar="<after-date>", help="List cached targets after the given date, see 'date-format'")
-	parser.add_argument('--until', dest='date_until', metavar="<date-to>", help="List cached targets until 'date-to', from now and up to date")
-	parser.add_argument('--before', dest='date_before', metavar="<before-date>", help="List cached targets before 'date-format'" +
-		"\n\n" +
-		"supported date-formats:\n" +
-		"- <year>-<month>-<day> / YYYY-DD-MM, ex 2021-03-20\n" +
-		"- <number>.<pronom>.ago, ex 2.days.ago, 1.day.ago\n" +
-		"- Apr 1 2021 / 2 weeks ago / 2.weeks.ago\n" +
-		"number of Y(ear)(s), M(onth)(s), D(ay)(s), h(our)(s), m/min(s),minute(s), s/sec(s)/second(s)")
-	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
-	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
-	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information")
-	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
-
-	args = parser.parse_args()
-	main(args)
+def testing(args):
 	"""
 	#print(DateHelper.now())
 	#dh = DateHelper(DateHelper.now())
@@ -2237,72 +2247,144 @@ if __name__ == '__main__':
 			print("rel_date: '%s'" % rel_date.date)
 		print("END of RelativeDate ('--since')\n")
 
-		print("START of 'pattern'")
-		pattern_date = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$"
-		pattern_date_time = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$"
-		pattern_date_time_no_milisec = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
-		pattern_date_time_ISO_8061 = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}-[0-9]{2}:[0-9]{2}$"
-		pattern_date_time_ISO_8061_no_timezone = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$"
-		pattern_date_time_z = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
-
-		pattern_time_has_milisec = "[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}"
-		pattern_has_time = "[0-9]{2}:[0-9]{2}:[0-9]{2}"
-
-		string_date = "2022-08-23"
-		string_date_time_no_milisec = "2022-08-23 02:08:10"
-		string_date_time = "2022-08-23 02:08:10.912150"
-		string_date_time_ISO_8061 = "2022-08-23T22:32:47.912150-10:00"
-		string_date_time_ISO_8061_no_timezone = "2022-08-23T22:32:47.912150"
-		string_date_time_z = "2022-08-23T15:02:27Z"
-		if re.match(pattern_date, string_date):
-			print("found date (no time) '%s'" % string_date)
-		if re.match(pattern_date_time, string_date_time):
-			print("found date (with time) '%s'" % string_date_time)
-		if re.match(pattern_date_time_no_milisec, string_date_time_no_milisec):
-			print("found date (time no milisec) '%s'" % string_date_time_no_milisec)
-		if re.match(pattern_date_time_ISO_8061, string_date_time_ISO_8061):
-			print("found date (time ISO 8061) '%s'" % string_date_time_ISO_8061)
-		if re.match(pattern_date_time_ISO_8061_no_timezone, string_date_time_ISO_8061_no_timezone):
-			print("found date (time ISO 8061, no_ timezone) '%s'" % string_date_time_ISO_8061_no_timezone)
-		if re.match(pattern_date_time_z, string_date_time_z):
-			print("found date (time Z) '%s'" % string_date_time_z)
-		print("END of 'pattern'\n")
-
-		print("[START] test for time and milisec")
-		print("[testing-string] '%s'" % string_date_time_no_milisec)
-		string_test_for_time = string_date_time_no_milisec
-		#if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
-		if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
-			print("has time '%s'" % string_test_for_time)
-		string_test_for_time = string_date_time
-		if re.match(".*%s.*" % pattern_time_has_milisec, string_test_for_time):
-			print("time has milisec '%s'" % string_test_for_time)
-		print("[END] test for time and milisec\n")
 		
+		# // test pattern for date and time format
+		test_pattern(args)
 		# // test parsing unknown date format
-		print("* Format unknown date(s) as 'YYYY-DD-MM hh:mm:ss':")
-		format_as_date_time = "%Y-%m-%d %H:%M:%S"
-		format_as_date_time_milisec = "%Y-%m-%d %H:%M:%S.%f"
-		print("* Static test - using function 'test_formate_date()'")
-		test_formate_date(format_as_date_time_milisec, "12/18/10 02:08:10.912150-10:00")
-		test_formate_date(format_as_date_time_milisec, "12/18/10 02:08:10.9")
-		test_formate_date(format_as_date_time_milisec, "12/18/10 02:08:10")
-		test_formate_date(DateHelper.DATETIME_FORMAT, datetime.today())
-		test_formate_date(format_as_date_time, "2009/48")
-		test_formate_date(format_as_date_time, "Feb 17, 2009")
-		test_formate_date(format_as_date_time, "12/18/10")
-		test_formate_date(format_as_date_time, "Feb 17")
-		test_formate_date(format_as_date_time, "17022009")
-		test_formate_date(format_as_date_time, "02172009")
-		test_formate_date(format_as_date_time, "02-03-2009")
-		test_formate_date(format_as_date_time, "03-02-2009")
-		test_formate_date(format_as_date_time, "17-02-2009")
-		test_formate_date(format_as_date_time, "2009/17/02")
-		test_formate_date(format_as_date_time, "2009/02/17")
-		test_formate_date(format_as_date_time, "20090217")
-		test_formate_date(format_as_date_time, "2022-08-23")
-		test_formate_date(format_as_date_time, "2022-08-23 02:08:10")
-		test_formate_date(format_as_date_time, "2022-08-23 02:08:10.912150")
-		test_formate_date(format_as_date_time, "2022-08-23T22:32:47.912150-10:00")
-		test_formate_date(format_as_date_time, "2022-08-23T22:32:47.912150")
-		test_formate_date(format_as_date_time, "2022-08-23T15:02:27Z")
+		test_date_management(args)
+def test_pattern(args):
+	print("START of 'pattern'")
+	pattern_date = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}$"
+	pattern_date_time = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$"
+	pattern_date_time_no_milisec = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+	pattern_date_time_ISO_8061 = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}-[0-9]{2}:[0-9]{2}$"
+	pattern_date_time_ISO_8061_no_timezone = "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}$"
+	pattern_date_time_z = "^[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+	pattern_time_has_milisec = "[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}"
+	pattern_has_time = "[0-9]{2}:[0-9]{2}:[0-9]{2}"
+
+	string_date = "2022-08-23"
+	string_date_time_no_milisec = "2022-08-23 02:08:10"
+	string_date_time = "2022-08-23 02:08:10.912150"
+	string_date_time_ISO_8061 = "2022-08-23T22:32:47.912150-10:00"
+	string_date_time_ISO_8061_no_timezone = "2022-08-23T22:32:47.912150"
+	string_date_time_z = "2022-08-23T15:02:27Z"
+
+	if re.match(pattern_date, string_date):
+		print("found date (no time) '%s'" % string_date)
+	if re.match(pattern_date_time, string_date_time):
+		print("found date (with time) '%s'" % string_date_time)
+	if re.match(pattern_date_time_no_milisec, string_date_time_no_milisec):
+		print("found date (time no milisec) '%s'" % string_date_time_no_milisec)
+	if re.match(pattern_date_time_ISO_8061, string_date_time_ISO_8061):
+		print("found date (time ISO 8061) '%s'" % string_date_time_ISO_8061)
+	if re.match(pattern_date_time_ISO_8061_no_timezone, string_date_time_ISO_8061_no_timezone):
+		print("found date (time ISO 8061, no_ timezone) '%s'" % string_date_time_ISO_8061_no_timezone)
+	if re.match(pattern_date_time_z, string_date_time_z):
+		print("found date (time Z) '%s'" % string_date_time_z)
+	print("END of 'pattern'\n")
+
+	print("[START] test for time and milisec")
+	print("[testing-string] '%s'" % string_date_time_no_milisec)
+	string_test_for_time = string_date_time_no_milisec
+	#if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
+	if re.match(".*%s.*" % pattern_has_time, string_test_for_time):
+		print("has time '%s'" % string_test_for_time)
+	string_test_for_time = string_date_time
+	if re.match(".*%s.*" % pattern_time_has_milisec, string_test_for_time):
+		print("time has milisec '%s'" % string_test_for_time)
+	print("[END] test for time and milisec\n")
+def test_date_management(args):
+	print("* Test - Format unknown date(s)")
+
+	date_time_format = DateHelper.DATETIME_FORMAT_STANDARD # %Y-%m-%d %H:%M:%S
+	date_list = []
+	date_list.append(datetime.today())
+	date_list.append("2009/48")
+	date_list.append("Feb 17, 2009")
+	date_list.append("Feb 17 2009")
+	date_list.append("17 Feb 2009")
+	date_list.append("17 february, 2009")
+	date_list.append("Feb 2009")
+	date_list.append("2009 Feb")
+	date_list.append("12/18/10")
+	date_list.append("2009/ 2/17")
+	date_list.append("Feb 17")
+	date_list.append("17 Feb")
+	date_list.append("17022009")
+	date_list.append("02172009")
+	date_list.append("02-03-2009")
+	date_list.append("03-02-2009")
+	date_list.append("02-17-2009")
+	date_list.append("17-02-2009")
+	date_list.append("2009/17/02")
+	date_list.append("2009/02/17")
+	date_list.append("20090217")
+	date_list.append("2022-08-23")
+	date_list.append("2022-08-23 02:08:10")
+	date_list.append("2022-08-23 02:08:10.912150")
+	date_list.append("2022-08-23T22:32:47.912150-10:00")
+	date_list.append("2022-08-23T22:32:47.912150")
+	date_list.append("2022-08-23T15:02:27Z")
+	date_list.append("2018-10-29 10:02:48 AM")
+	date_list.append("2018-10-29 10:02:48 PM")
+	date_list.append("2018-10-29 07:30:20 PM")
+	date_list.append("12:00:00")
+	date_list.append("12:00")
+	for date in date_list:
+		print("(format '%s') %s <- %s" % (date_time_format, DateHelper.format_date(date, date_time_format), date))
+	print("")
+
+	date_time_format = DateHelper.DATETIME_FORMAT_MILISEC # %Y-%m-%d %H:%M:%S.%f
+	date_list = []
+	date_list.append("2022-08-23T22:32:47.912150-10:00")
+	date_list.append("08/23/22 22:32:47.9")
+	date_list.append("08/23/22 22:32:47")
+	for date in date_list:
+		print("(format '%s') %s <- %s" % (date_time_format, DateHelper.format_date(date, date_time_format), date))
+	
+	#DateHelper.DATETIME_FORMAT_STANDARD
+	#datetime.today()
+	
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
+
+	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit, use '-v' for verbose output")
+	parser.add_argument('--account-profile', dest='out_account_profile', action='store_true', help="Output Shodan Account Profile info and exit, use '-v' for verbose output")
+	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
+	parser.add_argument('-t', dest='target', help='Host or IP address (or cache index) of the target to lookup')
+	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
+	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target")
+	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data'")
+	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history" +
+		"\n\n")
+	parser.add_argument('-mp', '--match-ports', metavar="port[,port,...]", dest='match_on_ports', help='Match on port, comma-separated list of ports')
+	parser.add_argument('-ms', '--match-service', metavar="service[,service,...]", dest='match_on_modules', help='Match on service type, comma-separated list of services (ex. ssh,http,https)')
+	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
+	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)' +
+		"\n\n")
+	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
+	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
+	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
+	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json" +
+		"\n\n")
+	parser.add_argument('--time', dest='time_frame', metavar="<datetime range>", help="List cached targets matching range")
+	parser.add_argument('--since', dest='date_since', metavar="<date-from>", help="List cached targets since (before) 'date-from'")
+	parser.add_argument('--after', dest='date_after', metavar="<after-date>", help="List cached targets after the given date, see 'date-format'")
+	parser.add_argument('--until', dest='date_until', metavar="<date-to>", help="List cached targets until 'date-to', from now and up to date")
+	parser.add_argument('--before', dest='date_before', metavar="<before-date>", help="List cached targets before 'date-format'" +
+		"\n\n" +
+		"supported date-formats:\n" +
+		"- <year>-<month>-<day> / YYYY-DD-MM, ex 2021-03-20\n" +
+		"- <number>.<pronom>.ago, ex 2.days.ago, 1.day.ago\n" +
+		"- Apr 1 2021 / 2 weeks ago / 2.weeks.ago\n" +
+		"number of Y(ear)(s), M(onth)(s), D(ay)(s), h(our)(s), m/min(s),minute(s), s/sec(s)/second(s)")
+	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
+	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
+	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information")
+	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
+
+	args = parser.parse_args()
+	main(args)
+	testing(args)
