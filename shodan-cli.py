@@ -1027,6 +1027,7 @@ class ShodanSettings:
 		self.settings['Include_History'] = False
 
 		self.settings['Verbose_Mode'] = False
+		self.settings['Out_Host_Only'] = False
 
 		self.settings['Out_Host_JSON'] = False
 		self.settings['Out_Service_Data'] = False
@@ -1036,6 +1037,8 @@ class ShodanSettings:
 		self.settings['Match_On_Ports'] = []
 		self.settings['Match_On_Modules'] = []
 		self.settings['Filter_Out_Ports'] = []
+		self.settings['Filter_Out_Modules'] = []
+
 
 		self.settings['Date_Since'] = None
 		self.settings['Date_After'] = None
@@ -1054,6 +1057,8 @@ class ShodanSettings:
 		self.settings['Include_History'] = args.include_history
 
 		self.settings['Verbose_Mode'] = args.verbose_mode
+		self.settings['Out_Host_Only'] = args.out_host_only
+		
 		self.settings['Out_Host_JSON'] = args.out_host_json
 		self.settings['Out_Service_Data'] = args.out_service_data
 		self.settings['Out_Service_Module'] = args.out_service_module
@@ -1067,6 +1072,9 @@ class ShodanSettings:
 		if args.filter_out_ports is not None:
 			for port in args.filter_out_ports.split(','):
 				self.settings['Filter_Out_Ports'].append(int(port.strip()))
+		if args.filter_out_modules is not None:
+			for module in args.filter_out_modules.split(','):
+				self.settings['Filter_Out_Modules'].append(module.strip())
 
 		if args.date_since is not None:
 			self.settings['Date_Since'] = args.date_since
@@ -1632,7 +1640,14 @@ def filter_out_service(shodan, service):
 		module_name = service.module_name
 		if '-' in module_name:
 			module_name = module_name.split('-')[0]
-		if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
+		#if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
+		if service.module_name not in shodan.settings['Match_On_Modules'] or module_name not in shodan.settings['Match_On_Modules']:
+			return True
+	if len(shodan.settings['Filter_Out_Modules']) > 0:
+		module_name = service.module_name
+		if '-' in module_name:
+			module_name = module_name.split('-')[0]
+		if service.module_name in shodan.settings['Filter_Out_Modules'] or module_name in shodan.settings['Filter_Out_Modules']:
 			return True
 	filter_out = False
 def out_shodan(shodan):
@@ -1678,6 +1693,8 @@ def out_shodan(shodan):
 	if shodan.settings['Out_Host_JSON']:
 		host_data = ["[*] %s" % l for l in host.json.split('\n') if len(l) > 0 ]
 		print('\n'.join(host_data))
+	if shodan.settings['Out_Host_Only']:
+		return
 	print("* Service Overview\n %s" % ('-'*30))
 	# // format service headers
 	print("Scan-Date\tPort      Service\tVersion / Info")
@@ -1809,10 +1826,12 @@ def out_shodan(shodan):
 
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
-	if shodan.settings['Verbose_Mode']:
+	#if shodan.settings['Verbose_Mode']:
+	if not shodan.settings['Out_Host_Only']:
 		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
 	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
-	if shodan.settings['Verbose_Mode']:
+	#if shodan.settings['Verbose_Mode']:
+	if not shodan.settings['Out_Host_Only']:
 		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
 
 	if shodan.settings['Flush_Cache']:
@@ -1844,8 +1863,8 @@ def list_cache(shodan, target=None):
 
 		end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
 		cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
-		cached_delta = relativedelta.relativedelta(end_date, cache_date)
-		cache_delta = relativedelta.relativedelta(end_date, cache_date)
+		cached_delta = relativedelta(end_date, cache_date)
+		cache_delta = relativedelta(end_date, cache_date)
 		out_data = "%s\t" % out_data
 		out_data = "%s%s years" % (out_data, cached_delta.years)
 		out_data = "%s, %s months" % (out_data, cached_delta.months)
@@ -1856,8 +1875,8 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
-		if shodan.settings['Verbose_Mode']:
-			if len(host.hostnames) > 0:
+		if not shodan.settings['Out_Host_Only']:
+			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
 				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
 			else:
 				out_data = "%s\t" % (out_data)
@@ -1895,8 +1914,8 @@ def list_cache(shodan, target=None):
 
 		end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
 		cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
-		cached_delta = relativedelta.relativedelta(end_date, cache_date)
-		cache_delta = relativedelta.relativedelta(end_date, cache_date)
+		cached_delta = relativedelta(end_date, cache_date)
+		cache_delta = relativedelta(end_date, cache_date)
 		out_data = "%s\t" % out_data
 		out_data = "%s%s years" % (out_data, cached_delta.years)
 		out_data = "%s, %s months" % (out_data, cached_delta.months)
@@ -1907,8 +1926,8 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
-		if shodan.settings['Verbose_Mode']:
-			if len(host.hostnames) > 0:
+		if not shodan.settings['Out_Host_Only']:
+			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
 				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
 			else:
 				out_data = "%s\t" % (out_data)
@@ -2081,18 +2100,20 @@ if __name__ == '__main__':
 	parser.add_argument('-t', dest='target', help='Host or IP address (or cache index) of the target to lookup')
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
 	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit, use '-F' to re-cache")
-	parser.add_argument('-C', '--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data'")
+	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data'")
 	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history" +
 		"\n\n")
 	parser.add_argument('-mp', '--match-ports', metavar="port[,port,...]", dest='match_on_ports', help='Match on port, comma separated list')
-	parser.add_argument('-mm', '--match-module', metavar="module(s)", dest='match_on_modules', help='Match on module, comma separated list (ex. ssh,http,https)')
-	parser.add_argument('-fp', '--filter-ports', metavar="port(s)", dest='filter_out_ports', help="Filter out port, comma separated list" +
+	parser.add_argument('-ms', '--match-service', metavar="service(s)", dest='match_on_modules', help='Match on service type, comma separated list (ex. ssh,http,https)')
+	parser.add_argument('-fp', '--filter-port', metavar="port(s)", dest='filter_out_ports', help="Filter out port, comma separated list")
+	parser.add_argument('-fm', '--filter-service', metavar="service(s)", dest='filter_out_modules', help='Filter out service type, comma separated list (ex. ssh,http,https)' +
 		"\n\n")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
 	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
 	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
 	parser.add_argument('--service-json', dest='out_service_json', action='store_true', help="Output service json" +
 		"\n\n")
+	parser.add_argument('--time', dest='time_frame', metavar="<datetime range>", help="List cached targets matching range")
 	parser.add_argument('--since', dest='date_since', metavar="<date-from>", help="List cached targets since (before) 'date-from'")
 	parser.add_argument('--after', dest='date_after', metavar="<after-date>", help="List cached targets after the given date, see 'date-format'")
 	parser.add_argument('--until', dest='date_until', metavar="<date-to>", help="List cached targets until 'date-to', from now and up to date")
@@ -2105,6 +2126,7 @@ if __name__ == '__main__':
 		"number of Y(ear)(s), M(onth)(s), D(ay)(s), h(our)(s), m/min(s),minute(s), s/sec(s)/second(s)")
 	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
 	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
+	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 
 	args = parser.parse_args()
@@ -2176,13 +2198,32 @@ if __name__ == '__main__':
 	"""
 
 	if args.date_since is not None:
-		# 1 week 1 day ago
-		# 1 week 1 hour 5 sec ago
-		# 2 year 1 month 1 week 1 day 2 hours 4 min 10 secs ago
-		# yesterday today now
-		# 10 dec 10 monday
-		# 2022-10-12
-		# 10 monday # unsupported
+		# * type: ago
+		#   1 week 1 day ago
+		#   1 week 1 hour 5 sec ago
+		#   2 year 1 month 1 week 1 day 2 hours 4 min 10 secs ago
+		#   yesterday today now
+		#   10 dec 10 monday
+		#   2022-10-12
+		#   10 monday # unsupported
+		#   midnight 2 hours ago
+		#
+		# * type: explicit
+		#   today, yesterday, monday (weekday), midnight, noon, tea (tea time)
+		#   date: 2022-10-12
+		#
+		# * type: during
+		#   2021 (year), dec (month), dec 2021 (combined month & year), 2022 jan (jan 01 - jan 31)
+		#   note that for 'combined month & year' month can either be placed before or after the year.
+		#
+		# * type: last
+		#   year, month,week, day, hour, min (60 sec)
+		#   each can be prefixed with a number; ex. 2 years, 2 months, 3 weeks, 3 days, 3 hours, 20 mins, 30 sec
+		#
+		# * type: between
+		#   dates: 2022-10-01 - 2022-10-30, 1 jan - 20 feb, 2022 (jan 01) - 2022 dec (31)
+		#   time-frame: 12:20 - 14:40
+		#
 		print("START of RelativeDate ('--since')")
 		date_string = args.date_since
 		old_date = DateHelper(DateHelper.now())
