@@ -878,9 +878,9 @@ def match_on_service(shodan, service):
 			if not found_hostname:
 				return False
 
-	#if len(shodan.settings['Match_On_Custom_Conditions']) > 0:
-	#	if not match_service_on_custom_condition(shodan, service):
-	#		return False
+	if len(shodan.settings['Match_On_Custom_Conditions']) > 0:
+		if not match_service_on_custom_condition(shodan, service):
+			return False
 
 	return True
 
@@ -1071,9 +1071,9 @@ def out_shodan(shodan):
 	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
 
 	for service in filtered_services:
-		if len(shodan.settings['Match_On_Custom_Conditions']) > 0:
-			if not match_service_on_custom_condition(shodan, service):
-				continue
+		#if len(shodan.settings['Match_On_Custom_Conditions']) > 0:
+		#	if not match_service_on_custom_condition(shodan, service):
+		#		continue
 		# // output service overview
 		fill_prefix = 1
 		service_header = "%s/%s" % (service.port, service.protocol.upper())
