@@ -7,7 +7,7 @@ from shodan.cli.helpers import get_api_key as shodan_api_key
 
 import argparse
 import json
-import os
+import os, sys
 from collections import OrderedDict
 from datetime import datetime, date, timedelta
 from dateutil.relativedelta import relativedelta
@@ -17,6 +17,7 @@ from operator import attrgetter
 from ipaddress import ip_address
 import socket
 import re
+from fnmatch import fnmatch
 
 class RelativeDate:
 	def __init__(self, date):
@@ -44,36 +45,56 @@ class RelativeDate:
 				last_items = date_string.split(".")[1:]
 				if last_items is None:
 					return False
-			return self.parse_last(last_items)
+			return self._parse_last(last_items)
 		return False
 
-	def parse_last(self, last_items):
+	def _parse_last(self, last_items):
 		if last_items is None:
 			return False
-		print("parse_last '%s', len=%s" % (last_items, len(last_items)))
-		return self._remove_from_date(last_items)
+		print("[* parse_last] '%s', len=%s" % (last_items, len(last_items)))
+		if len(last_items) == 1 or len(last_items) == 2:
+			return self._remove_from_date(last_items)
+		return False
+
 	def _remove_from_date(self, range_items):
 		change_date = self._date
 		if len(range_items) == 1:
 			word = range_items[0]
-			print("_remove_from_date.word '%s'" % word)
+			print("[* _remove_from_date].word '%s'" % word)
 			if word.endswith("s"):
-				print("_remove_from_date removing 's' from '%s'" % word)
+				print("[* _remove_from_date] removing 's' from '%s'" % word)
 				word = word[0:-1]
-			#if self.word_is_month(word):
-			#	range_items.insert(0, 1)
-			#	date_ago_delta = DateHelper.remove_months_from(change_date, 1)
-			#	print("[+] remove '%s %s' - date: %s, delta: %s" % (1, word, change_date, date_ago_delta))
-			#	change_date = date_ago_delta
 			if self.is_date_word(word):
 				range_items.insert(0, 1)
-				print("_remove_from_date change '%s' to '1 %s'" % (range_items[0], range_items[1]))
-		elif len(range_items) == 2:
-			print("YES")
-			if "int" == type(range_items[0]).__name__ and "str" == type(range_items[1]).__name__:
-				word_num = range_items[0]
-				word = range_items[1]
-				print("_remove_from_date '%s %s'" % (word_num, word))
+				print("[* _remove_from_date] change '%s' to '1 %s'" % (range_items[0], range_items[1]))
+
+		if len(range_items) == 2:
+			if "int" != type(range_items[0]).__name__ and "str" != type(range_items[1]).__name__:
+				return False
+
+			word_num = int(range_items[0])
+			date_word = range_items[1]
+			print("[* _remove_from_date] '%s %s'" % (word_num, date_word))
+			#if self.is_date_word(date_word) or self.is_time_word(date_word):
+			if self.is_date_word(date_word):
+				if self.word_is_year(date_word):
+					date_delta = DateHelper.remove_years_from_date(change_date, word_num)
+					print("[+] remove '%s %s' - date: %s, delta: %s" % (word_num, date_word, change_date, date_delta))
+					change_date = date_delta
+				elif self.word_is_month(date_word):
+					date_delta = DateHelper.remove_months_from(change_date, word_num)
+					print("[+] remove '%s %s' - date: %s, delta: %s" % (word_num, date_word, change_date, date_delta))
+					change_date = date_delta
+				elif self.word_is_week(date_word):
+					date_delta = DateHelper.remove_weeks_from(change_date, word_num)
+					print("[+] remove '%s %s' - date: %s, delta: %s" % (word_num, date_word, change_date, date_delta))
+					change_date = date_delta
+				elif self.word_is_day(date_word):
+					date_delta = DateHelper.remove_days_from(change_date, word_num)
+					print("[+] remove '%s %s' - date: %s, delta: %s" % (word_num, date_word, change_date, date_delta))
+					change_date = date_delta
+			else:
+				return False
 
 		self._date = change_date
 		return True
@@ -104,7 +125,7 @@ class RelativeDate:
 					# // remove number of year, month, week, day, hour, min, sec
 					if self.is_date_word(next_item) or self.is_time_word(next_item):
 						if self.word_is_year(next_item):
-							date_ago_delta = DateHelper.remove_years_from(date_ago, word_num)
+							date_ago_delta = DateHelper.remove_years_from_date(date_ago, word_num)
 							print("[+] add '%s %s' - date: %s, delta: %s" % (word_num, next_item, date_ago, date_ago_delta))
 							date_ago = date_ago_delta
 						elif self.word_is_month(next_item):
@@ -342,11 +363,11 @@ class RelativeDate:
 			return True
 		return False
 	def word_is_min(self, word):
-		if "min" == word.lower() or "mins" == word.lower() or "minute" == word.lower() or "minutes" == word.lower():
+		if "min" == word.lower() or "min" == word.lower() or "minute" == word.lower() or "minutes" == word.lower():
 			return True
 		return False
 	def word_is_sec(self, word):
-		if "sec" == word.lower() or "secs" == word.lower() or "second" == word.lower() or "seconds" == word.lower():
+		if "sec" == word.lower() or "sec" == word.lower() or "second" == word.lower() or "seconds" == word.lower():
 			return True
 		return False
 	def word_is_midnight(self, word):
@@ -411,6 +432,19 @@ class RelativeDate:
 			return True
 		elif self.weekday_is_sun(word):
 			return True
+		return False
+	def change_to_month(self, month):
+		month_digits = None
+		if 'int' == type(month).__name__:
+			if month >= 1 and month <= 12:
+				month_digits = month
+		elif 'str' == type(month).__name__ and self.is_month_word(month):
+			month_digits = DateHelper.month_to_digits(month)
+
+		if month_digits is not None:
+			self._date = self._date.replace(month=month_digits)
+			return True
+			
 		return False
 
 	def has_weekday(self, date_string):
@@ -545,6 +579,7 @@ class DateHelper:
 	DATETIME_FORMAT_MILISEC = "%Y-%m-%d %H:%M:%S.%f"
 	def __init__(self, date):
 		self._date = date
+
 	@property
 	def date(self):
 		return self._date
@@ -613,24 +648,26 @@ class DateHelper:
 		return True
 	@property
 	def is_today(self):
-		today_date = DateHelper.now()
-		if self._date.year != today_date.year:
-			return False
-		if self._date.month != today_date.month:
-			return False
-		if self._date.day != today_date.day:
-			return False
-		return True
+		return DateHelper.date_is_today(self._date)
+		#today_date = DateHelper.now()
+		#if self._date.year != today_date.year:
+		#	return False
+		#if self._date.month != today_date.month:
+		#	return False
+		#if self._date.day != today_date.day:
+		#	return False
+		#return True
 	@property
 	def is_yesterday(self):
-		yesterday_date = DateHelper.remove_days_from(DateHelper.now(), 1)
-		if self._date.year != yesterday_date.year:
-			return False
-		if self._date.month != yesterday_date.month:
-			return False
-		if self._date.day != yesterday_date.day:
-			return False
-		return True
+		return DateHelper.date_is_yesterday(self._date)
+		#yesterday_date = DateHelper.remove_days_from(DateHelper.now(), 1)
+		#if self._date.year != yesterday_date.year:
+		#	return False
+		#if self._date.month != yesterday_date.month:
+		#	return False
+		#if self._date.day != yesterday_date.day:
+		#	return False
+		#return True
 
 	@staticmethod
 	def is_same_hour(date, other_date):
@@ -785,8 +822,6 @@ class DateHelper:
 		elif "december" == month.lower() or "dec" == month.lower():
 			return 12
 
-
-
 	@staticmethod
 	def string_to_date(date_string):
 		return datetime.strptime(date_string, '%Y-%m-%d %H:%M:%S')
@@ -862,12 +897,21 @@ class DateHelper:
 	@property
 	def minute_digits(self):
 		return int(self._date.minute)
+	@property
+	def second(self):
+		return int(self._date.second)
+	@property
+	def milisecond(self):
+		return int(self._date.strftime("%f"))
+	@property
+	def time(self):
+		return self._date.strftime("%H:%M:%S")
 
 	@staticmethod
-	def add_years_to(date, years):
+	def add_years_to_date(date, years):
 		return date + relativedelta(years=years)
 	@staticmethod
-	def remove_years_from(date, years):
+	def remove_years_from_date(date, years):
 		return date - relativedelta(years=years)
 	@staticmethod
 	def add_months_to(date, months):
@@ -907,9 +951,11 @@ class DateHelper:
 		return date - timedelta(seconds=seconds)
 
 	def add_years(self, years):
-		self._date = self._date + relativedelta(years=years)
+		#self._date = self._date + relativedelta(years=years)
+		self._date = DateHelper.add_years_to_date(self._date, years)
 	def remove_years(self, years):
-		self._date = self._date - relativedelta(years=years)
+		#self._date = self._date - relativedelta(years=years)
+		self._date = DateHelper.remove_years_from_date(self._date, years)
 	def add_months(self, months):
 		self._date = self._date + relativedelta(months=months)
 	def remove_months(self, months):
@@ -934,6 +980,12 @@ class DateHelper:
 		self._date = self._date + timedelta(seconds=seconds)
 	def remove_seconds(self, seconds):
 		self._date = self._date - timedelta(seconds=seconds)
+
+
+	@property
+	def days_in_month(self):
+		last_day_of_month_date = DateHelper(datetime(self.year, self.month_digits, 1) + relativedelta(months=1, days=-1))
+		return last_day_of_month_date.day_digits
 	
 	
 # // steal date formats from 'git'
@@ -1090,6 +1142,10 @@ class ShodanSettings:
 		self.settings['Verbose_Mode'] = False
 		self.settings['Out_Host_Only'] = False
 
+		self.settings['Out_Head_Service_Count'] = 0
+		self.settings['Out_Tail_Service_Count'] = 0
+		self.settings['Out_Sort_By_Scan_Date'] = False
+		
 		self.settings['Out_Host_JSON'] = False
 		self.settings['Out_Service_Data'] = False
 		self.settings['Out_Service_Module'] = False
@@ -1097,8 +1153,13 @@ class ShodanSettings:
 
 		self.settings['Match_On_Ports'] = []
 		self.settings['Match_On_Modules'] = []
+		self.settings['Match_On_ShodanID'] = []
+		self.settings['Match_On_Scanned_Hostname'] = []
+		self.settings['Match_On_Crawler'] = []
+		self.settings['Match_On_Scan_Id'] = []
 		self.settings['Filter_Out_Ports'] = []
 		self.settings['Filter_Out_Modules'] = []
+		self.settings['Filter_Out_Scanned_Hostname'] = []
 
 
 		self.settings['Date_Since'] = None
@@ -1120,6 +1181,12 @@ class ShodanSettings:
 		self.settings['Verbose_Mode'] = args.verbose_mode
 		self.settings['Out_Host_Only'] = args.out_host_only
 		
+		self.settings['Out_Sort_By_Scan_Date'] = args.out_sort_by_scan_date
+		if args.out_head_service_count is not None:
+			self.settings['Out_Head_Service_Count'] = args.out_head_service_count
+		if args.out_tail_service_count is not None:
+			self.settings['Out_Tail_Service_Count'] = args.out_tail_service_count
+		
 		self.settings['Out_Host_JSON'] = args.out_host_json
 		self.settings['Out_Service_Data'] = args.out_service_data
 		self.settings['Out_Service_Module'] = args.out_service_module
@@ -1130,12 +1197,29 @@ class ShodanSettings:
 		if args.match_on_modules is not None:
 			for module in args.match_on_modules.split(','):
 				self.settings['Match_On_Modules'].append(module.strip())
+		if args.match_on_shodan_id is not None:
+			for shodan_id in args.match_on_shodan_id.split(','):
+				self.settings['Match_On_ShodanID'].append(shodan_id.strip())
+		if args.match_on_scanned_hostname is not None:
+			for scanned_hostname in args.match_on_scanned_hostname.split(','):
+				self.settings['Match_On_Scanned_Hostname'].append(scanned_hostname.strip())
+		if args.match_on_crawler is not None:
+			for scanned_hostname in args.match_on_crawler.split(','):
+				self.settings['Match_On_Crawler'].append(scanned_hostname.strip())
+		if args.match_on_scan_id is not None:
+			for scanned_hostname in args.match_on_scan_id.split(','):
+				self.settings['Match_On_Scan_Id'].append(scanned_hostname.strip())
+		
+		
 		if args.filter_out_ports is not None:
 			for port in args.filter_out_ports.split(','):
 				self.settings['Filter_Out_Ports'].append(int(port.strip()))
 		if args.filter_out_modules is not None:
 			for module in args.filter_out_modules.split(','):
 				self.settings['Filter_Out_Modules'].append(module.strip())
+		if args.filter_out_scanned_hostname is not None:
+			for scanned_hostname in args.filter_out_scanned_hostname.split(','):
+				self.settings['Filter_Out_Scanned_Hostname'].append(scanned_hostname.strip())
 
 		if args.date_since is not None:
 			self.settings['Date_Since'] = args.date_since
@@ -1149,6 +1233,7 @@ class ShodanSettings:
 class ShodanCli:
 	def __init__(self, args):
 		self.settings = ShodanSettings(args).settings
+		self._args = args
 		self.api = ShodanAPI()
 		self._cache_data = None
 		self._setup_cache()
@@ -1265,8 +1350,9 @@ class Location:
 		data = "%s # long: %s, lat: %s" % (data, self.longitude,self.latitude)
 		return data
 class Shodan_Host:
-	def __init__(self, json_data, include_history):
-		self._json = json_data
+	def __init__(self, settings, host_json, include_history):
+		self._json = host_json
+		self.settings = settings
 		self.last_update = '' if 'last_update' not in self._json else self._json['last_update']
 		self.ip = self._json['ip_str']
 		self.asn = '' if 'asn' not in self._json else self._json['asn']
@@ -1280,31 +1366,38 @@ class Shodan_Host:
 
 	def _init_services(self, include_history):
 		service_ports = OrderedDict()
-		for port_json in self._json['data']:
-			port = int(port_json['port'])
-			if port not in service_ports:
-				service_ports[port] = []
-			service_ports[port].append(Port_Service(port_json))
-
-		# sort by timestamp by grouped ports
-		for port in service_ports:
-			service_ports[port] = sorted(service_ports[port], key=attrgetter('timestamp'))
-
-		sorted_ports = sorted(service_ports)
-		if include_history:
-			for port in sorted_ports:
-				first_seen_date = datetime.strptime(service_ports[port][0].timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
-				for service in service_ports[port]:
-					service.first_seen = first_seen_date
-					self.services.append(service)
+		if self.settings['Out_Sort_By_Scan_Date']:
+			#service_ports[port].append(Port_Service(port_json))
+			for port_json in self._json['data']:
+				self.services.append(Port_Service(port_json))
+				self.services = sorted(self.services, key=attrgetter('timestamp'))
 		else:
-			for port in sorted_ports:
-				service_first_scan = service_ports[port][0]
-				service_last_scan = service_ports[port][-1]
-				first_seen_date = datetime.strptime(service_first_scan.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
-				service_last_scan.first_seen = first_seen_date
-				#print("%s : %s" % (service_last_scan.port, service_last_scan.identifier))
-				self.services.append(service_last_scan)
+			#service_ports = OrderedDict()
+			for port_json in self._json['data']:
+				port = int(port_json['port'])
+				if port not in service_ports:
+					service_ports[port] = []
+				service_ports[port].append(Port_Service(port_json))
+
+			# sort by timestamp by grouped ports
+			for port in service_ports:
+				service_ports[port] = sorted(service_ports[port], key=attrgetter('timestamp'))
+
+			sorted_ports = sorted(service_ports)
+			if include_history:
+				for port in sorted_ports:
+					first_seen_date = datetime.strptime(service_ports[port][0].timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+					for service in service_ports[port]:
+						service.first_seen = first_seen_date
+						self.services.append(service)
+			else:
+				for port in sorted_ports:
+					service_first_scan = service_ports[port][0]
+					service_last_scan = service_ports[port][-1]
+					first_seen_date = datetime.strptime(service_first_scan.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+					service_last_scan.first_seen = first_seen_date
+					#print("%s : %s" % (service_last_scan.port, service_last_scan.identifier))
+					self.services.append(service_last_scan)
 
 	@property
 	def json(self):
@@ -1381,7 +1474,21 @@ class Port_Service:
 	def identifier(self):
 		if "_shodan" in self._json and "id" in self._json["_shodan"]:
 			return self._json["_shodan"]["id"]
-			#return "%s (%s)" % (self._json["_shodan"]["id"], self.timestamp)
+		return ''
+	@property
+	def crawler(self):
+		if "_shodan" in self._json and "crawler" in self._json["_shodan"]:
+			return self._json["_shodan"]["crawler"]
+		return ''
+	@property
+	def scanned_hostname(self):
+		if "_shodan" in self._json and "options" in self._json["_shodan"] and "hostname" in self._json["_shodan"]["options"]:
+			return self._json["_shodan"]["options"]["hostname"]
+		return ''
+	@property
+	def scan_id(self):
+		if "_shodan" in self._json and "options" in self._json["_shodan"] and "scan" in self._json["_shodan"]["options"]:
+			return self._json["_shodan"]["options"]["scan"]
 		return ''
 	
 	@property
@@ -1668,7 +1775,6 @@ class Module_HTTP:
 		return None
 
 	@property
-	#def components(self):
 	def web_technologies(self):
 		result = []
 		if 'http' in self._json and "components" in self._json['http']:
@@ -1689,20 +1795,56 @@ class Module_HTTP:
 			if 'waf' in module_data and module_data['waf'] is not None:
 				return module_data['waf']
 		return None
-def filter_out_service(shodan, service):
-	# filter in/out based on port, module-name
+def match_service_on_condition(shodan, service):
+	if not match_on_service(shodan, service):
+		return False
+	if filter_out_service(shodan, service):
+		return False
+	return True
+def match_on_service(shodan, service):
+	# // filter IN service based on conditions
+	if len(shodan.settings['Match_On_ShodanID']) > 0:
+		if service.identifier not in shodan.settings['Match_On_ShodanID']:
+			return False
+	if len(shodan.settings['Match_On_Crawler']) > 0:
+		if service.crawler not in shodan.settings['Match_On_Crawler']:
+			return False
+	if len(shodan.settings['Match_On_Scan_Id']) > 0:
+		if service.scan_id not in shodan.settings['Match_On_Scan_Id']:
+			return False
+
 	if len(shodan.settings['Match_On_Ports']) > 0:
 		if service.port not in shodan.settings['Match_On_Ports']:
-			return True
-	if len(shodan.settings['Filter_Out_Ports']) > 0:
-		if service.port in shodan.settings['Filter_Out_Ports']:
-			return True
+			return False
 	if len(shodan.settings['Match_On_Modules']) > 0:
 		module_name = service.module_name
 		if '-' in module_name:
 			module_name = module_name.split('-')[0]
-		#if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
 		if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
+			return False
+
+	if len(shodan.settings['Match_On_Scanned_Hostname']) > 0:
+		# // match on single hostname
+		if len(shodan.settings['Match_On_Scanned_Hostname']) == 1:
+			if len(shodan.settings['Match_On_Scanned_Hostname'][0]) == 0:
+				if len(service.scanned_hostname) != 0:
+					return False
+			elif not fnmatch(service.scanned_hostname, shodan.settings['Match_On_Scanned_Hostname'][0]):
+				return False
+		else:
+			# // if any hostname match then filter IN
+			found_hostname = False
+			for hostname in shodan.settings['Match_On_Scanned_Hostname']:
+				if fnmatch(service.scanned_hostname, hostname):
+					found_hostname = True
+					break
+			if not found_hostname:
+				return False
+	return True
+def filter_out_service(shodan, service):
+	# // filter OUT service based on conditions
+	if len(shodan.settings['Filter_Out_Ports']) > 0:
+		if service.port in shodan.settings['Filter_Out_Ports']:
 			return True
 	if len(shodan.settings['Filter_Out_Modules']) > 0:
 		module_name = service.module_name
@@ -1710,14 +1852,29 @@ def filter_out_service(shodan, service):
 			module_name = module_name.split('-')[0]
 		if service.module_name in shodan.settings['Filter_Out_Modules'] or module_name in shodan.settings['Filter_Out_Modules']:
 			return True
-	filter_out = False
+
+	if len(shodan.settings['Filter_Out_Scanned_Hostname']) > 0:
+		# // match on single hostname
+		if len(shodan.settings['Filter_Out_Scanned_Hostname']) == 1:
+			if len(shodan.settings['Filter_Out_Scanned_Hostname'][0]) == 0:
+				if len(service.scanned_hostname) == 0:
+					return True
+			elif fnmatch(service.scanned_hostname, shodan.settings['Filter_Out_Scanned_Hostname'][0]):
+				return True
+		else:
+			# // if any hostname match then filter IN
+			for hostname in shodan.settings['Filter_Out_Scanned_Hostname']:
+				if fnmatch(service.scanned_hostname, hostname):
+					return True
+
+	return False
 def out_shodan(shodan):
-	json_data = shodan.get_cache()
+	host_json = shodan.get_cache()
 
 	print("* Shodan\n %s" % ('-'*30))
 	#print("Target: %s" % shodan.settings["Target"])
 	
-	host = Shodan_Host(json_data, shodan.settings['Include_History'])
+	host = Shodan_Host(shodan.settings, host_json, shodan.settings['Include_History'])
 
 	ip_host = ip_to_host(host.ip)
 	if ip_host is not None:
@@ -1760,11 +1917,16 @@ def out_shodan(shodan):
 	# // format service headers
 	print("Scan-Date\tPort      Service\tVersion / Info")
 	print("%s\t%s      %s\t%s" % (("-"*len("Scan-date")), ("-"*len("Port")), ("-"*len("Service")), ("-"*len("Version / Info"))))
-	for service in host.services:
-		# filter in/out based on port, module-name
-		if filter_out_service(shodan, service):
-			continue
 
+	filtered_services = []
+	for service in host.services:
+		# filter in/out based on condition
+		if match_service_on_condition(shodan, service):
+			filtered_services.append(service)
+		
+	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
+
+	for service in filtered_services:
 		# // output service overview
 		fill_prefix = 1
 		service_header = "%s/%s" % (service.port, service.protocol.upper())
@@ -1785,7 +1947,18 @@ def out_shodan(shodan):
 		fill_prefix = "\t\t\t\t\t"
 
 		if shodan.settings['Verbose_Mode']:
-			print("%sShodan.ID: %s" % (fill_prefix, service.identifier))
+			shodan_header = "%sShodan - ID: %s" % (fill_prefix, service.identifier)
+			#print("%sShodan.ID: %s" % (fill_prefix, service.identifier))
+			#if len(service.scanned_hostname) > 0:
+			#	shodan_header = "%s, Scanned Host: %s" % (shodan_header, service.scanned_hostname)
+			if len(service.crawler) > 0:
+				shodan_header = "%s, Crawler: %s" % (shodan_header, service.crawler)
+			if len(service.scan_id) > 0:
+				shodan_header = "%s, Scan Id: %s" % (shodan_header, service.scan_id)
+			print(shodan_header)
+			if len(service.scanned_hostname) > 0:
+				#shodan_header = "%s, Scanned Host: %s" % (shodan_header, service.scanned_hostname)
+				print("%sScanned Host: %s" % (fill_prefix, service.scanned_hostname))
 			print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
 			if service.has_tags:
 				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
@@ -1800,6 +1973,8 @@ def out_shodan(shodan):
 				http_server = ""
 				if http_module.header_exists("Server"):
 					http_server = http_module.get_header("Server")
+				elif http_module.header_exists("server"):
+					http_server = http_module.get_header("server")
 				elif 'ASP.NET' in service.data:
 					http_server = "most likely 'IIS' (found 'ASP.NET' in headers)"
 				if len(http_server) > 0:
@@ -1850,7 +2025,6 @@ def out_shodan(shodan):
 						if ssl_cert.issuer_cn is not None and len(ssl_cert.issuer_cn) > 0:
 							print('%s   Issuer.CN: %s' % (fill_prefix, ssl_cert.issuer_cn))
 
-			#if 'ssh' == service.module_name:
 			if service.is_ssh_service:
 				ssh_module = Module_SSH(service)
 				module_data = service.get_module_data()
@@ -1885,6 +2059,36 @@ def out_shodan(shodan):
 		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
 			print("")
 
+def filter_list_by_head_tail(shodan, data_list):
+	head_arg_index = get_arg_index(sys.argv, "--head")
+	tail_arg_index = get_arg_index(sys.argv, "--tail")
+
+	filtered_list = data_list
+
+	if head_arg_index is None and tail_arg_index is None:
+		return filtered_list
+
+	#if head_arg_index < tail_arg_index:
+	if head_arg_index is not None and tail_arg_index is None:
+		if shodan.settings['Out_Head_Service_Count'] <= len(filtered_list):
+			filtered_list = filtered_list[0:shodan.settings['Out_Head_Service_Count']]
+	elif head_arg_index is None and tail_arg_index is not None:
+		if shodan.settings['Out_Tail_Service_Count'] <= len(filtered_list):
+			filtered_list = filtered_list[len(filtered_list)-shodan.settings['Out_Tail_Service_Count']:]
+	else:
+		if head_arg_index < tail_arg_index:
+			if shodan.settings['Out_Head_Service_Count'] <= len(filtered_list):
+				filtered_list = filtered_list[0:shodan.settings['Out_Head_Service_Count']]
+			if shodan.settings['Out_Tail_Service_Count'] <= len(filtered_list):
+				filtered_list = filtered_list[len(filtered_list)-shodan.settings['Out_Tail_Service_Count']:]
+		else:
+			if shodan.settings['Out_Tail_Service_Count'] <= len(filtered_list):
+				filtered_list = filtered_list[len(filtered_list)-shodan.settings['Out_Tail_Service_Count']:]
+			if shodan.settings['Out_Head_Service_Count'] <= len(filtered_list):
+				filtered_list = filtered_list[0:shodan.settings['Out_Head_Service_Count']]
+
+	return filtered_list
+
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
 	#if shodan.settings['Verbose_Mode']:
@@ -1915,7 +2119,7 @@ def list_cache(shodan, target=None):
 		if shodan.settings['Flush_Cache']:
 			shodan.cache_host_ip(target, shodan.settings['Include_History'])
 
-		host = Shodan_Host(shodan.get_cache_by_file(cache_file), False)
+		host = Shodan_Host(shodan.settings, shodan.get_cache_by_file(cache_file), False)
 		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 		out_data = "%s\t%s" % (out_data, last_update)
 		c_time = os.path.getctime(cache_file)
@@ -1954,6 +2158,7 @@ def list_cache(shodan, target=None):
 	print(headers)
 	dir_list = os.listdir(shodan.settings['Cache_Dir'])
 	cache_index = -1
+	out_cache_list = []
 	for file in dir_list:
 		cache_index += 1
 		if not file.startswith("host.") or not file.endswith(".json"):
@@ -1966,7 +2171,7 @@ def list_cache(shodan, target=None):
 			shodan.cache_host_ip(target, shodan.settings['Include_History'])
 
 		cache_file = shodan._get_out_path(file)
-		host = Shodan_Host(shodan.get_cache_by_file(cache_file), False)
+		host = Shodan_Host(shodan.settings, shodan.get_cache_by_file(cache_file), False)
 		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 		out_data = "%s\t%s" % (out_data, last_update)
 		c_time = os.path.getctime(cache_file)
@@ -1995,6 +2200,10 @@ def list_cache(shodan, target=None):
 			host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
 			out_data = "%sPorts: %s" % (out_data, host_ports)
 			
+		#print(out_data)
+		out_cache_list.append(out_data)
+	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
+	for out_data in out_cache_list:
 		print(out_data)
 def cache_target_list(shodan, target_file):
 	print("[!] 'cache_target_list' function deprecated!")
@@ -2213,8 +2422,8 @@ def testing(args):
 	print("day_digits: %s" % dh.day_digits)
 	
 	print("now_date: %s" % now_date)
-	print("year + 1: %s" % DateHelper.date_to_string(DateHelper.add_years_to(now_date, 1)))
-	print("year - 1: %s" % DateHelper.date_to_string(DateHelper.remove_years_from(now_date, 1)))
+	print("year + 1: %s" % DateHelper.date_to_string(DateHelper.add_years_to_date(now_date, 1)))
+	print("year - 1: %s" % DateHelper.date_to_string(DateHelper.remove_years_from_date(now_date, 1)))
 	print("month + 1: %s" % DateHelper.date_to_string(DateHelper.add_months_to(now_date, 1)))
 	print("month - 1: %s" % DateHelper.date_to_string(DateHelper.remove_months_from(now_date, 1)))
 	print("day + 1: %s" % DateHelper.date_to_string(DateHelper.add_days_to(now_date, 1)))
@@ -2314,10 +2523,18 @@ def testing(args):
 		if rel_date._startswith_last(time_range):
 			print("'%s' startswith 'last'" % time_range)
 			if not rel_date.parse(time_range):
-				print("RelativeDate(): parse() returned false")
+				print("[!] RelativeDate(): parse() returned false")
 			print("date_now: '%s'" % date_now.date)
 			print("rel_date: '%s'" % rel_date.date)
 		print("END of RelativeDate ('--time')\n")
+
+		#today_date = DateHelper("2022-02-01 00:00:00")
+		today_date = DateHelper(DateHelper.now())
+		print(today_date.days_in_month)
+		print("time: %s" % today_date.time)
+		print("minute: %s" % today_date.minute_digits)
+		print("second: %s" % today_date.second)
+		print("milisecond: %s" % today_date.milisecond)
 
 def test_pattern(args):
 	print("START of 'pattern'")
@@ -2413,8 +2630,8 @@ def test_date_management(args):
 	
 	#DateHelper.DATETIME_FORMAT_STANDARD
 	#datetime.today()
-	
-
+def get_arg_index(args: list, name: str):
+	return next((i for i, v in enumerate(args) if v.startswith(name)), None)
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Shodan Cli in python")
 
@@ -2429,9 +2646,17 @@ if __name__ == '__main__':
 		"\n\n")
 	parser.add_argument('-mp', '--match-ports', metavar="port[,port,...]", dest='match_on_ports', help='Match on port, comma-separated list of ports')
 	parser.add_argument('-ms', '--match-service', metavar="service[,service,...]", dest='match_on_modules', help='Match on service type, comma-separated list of services (ex. ssh,http,https)')
+	parser.add_argument('-mi', '--match-shodan-id', metavar="id[,id,...]", dest='match_on_shodan_id', help="Match on shodan id, comma-separated list of IDs")
+	parser.add_argument('-mH', '--match-hostname', metavar="host[,host,...]", dest='match_on_scanned_hostname', help='Match on hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
+	parser.add_argument('-mC', '--match-crawler', metavar="id[,id,...]", dest='match_on_crawler', help='Match on unique ID of the crawler, comma-separated list of crawler id')
+	parser.add_argument('-mI', '--match-scan-id', metavar="id[,id,...]", dest='match_on_scan_id', help="Match on unique scan ID that identifies the request that launched the scan, comma-separated list of IDs")
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
-	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)' +
+	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
+	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts' +
 		"\n\n")
+	parser.add_argument('--sort-date', dest='out_sort_by_scan_date', action='store_true', help="Output services by scan date")
+	parser.add_argument('--head', metavar="num", dest='out_head_service_count', type=int, help="output first number of services")
+	parser.add_argument('--tail', metavar="num", dest='out_tail_service_count', type=int, help="output last number of services")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
 	parser.add_argument('-m', '--service-module', dest='out_service_module', action='store_true', help="Output service module data")
 	parser.add_argument('--host-json', dest='out_host_json', action='store_true', help="Output host json")
