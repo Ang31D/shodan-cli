@@ -907,23 +907,33 @@ def get_json_path(json_dict, path):
 			return True, json_data
 	return False, None
 def show_json_path_as_field(shodan, service):
-	fill_prefix = "\t\t\t\t\t"
+	fill_prefix = "\t\t\t\t"
 	fields = []
+	field = OrderedDict()
+	field["path"] = "_shodan.module"
+	field["name"] = "Section - WEB Info"
+	field["conditions"] = ["_shodan.module:value=http"]
+	field["value"] = "static:WEB Info"
+	field["prefix"] = ""
+	fields.append(field)
+
 	field = OrderedDict()
 	field["path"] = "_shodan.options.hostname"
 	field["name"] = "Scanned Host"
-	field["conditions"] = ["_shodan.options.hostname:exists", "_shodan.options.hostname:has-value"]
+	field["conditions"] = ["_shodan.module:value=http", "_shodan.options.hostname:exists", "_shodan.options.hostname:has-value"]
 	field["value"] = "json:path"
+	field["prefix"] = "\t"
 	fields.append(field)
+
 	field = OrderedDict()
 	field["path"] = "http.title"
 	field["name"] = "Page Title"
-	field["conditions"] = ["http.title:exists", "http.title:has-value"]
-	field["value"] = "static:Yes"
+	field["conditions"] = ["_shodan.module:value=http", "http.title:exists", "http.title:has-value"]
+	field["value"] = "json:path"
+	field["prefix"] = "\t"
 	fields.append(field)
 
 	for field in fields:
-		#custom = field["conditions"][0]
 		all_condition_match = True
 		for custom in field["conditions"]:
 			path = custom.split(':')[0].strip().lower()
@@ -934,14 +944,18 @@ def show_json_path_as_field(shodan, service):
 		if all_condition_match:
 			if field["value"].startswith("static:"):
 				path_exists = True
-				path_value = field["value"].split(":")[1]
+				#path_value = field["value"].split(":")[1]
+				path_value = "%s" % field["value"].split(":")[1]
 			elif field["value"].startswith("json:"):
 				path_exists, path_value = get_json_path(service._json, field["path"])
+				path_value = "%s: %s" % (field["name"], path_value)
 			if path_exists:
-				print("%s***** %s(%s): %s" % (fill_prefix, field["name"], field["path"], path_value))
+				#print("%s***** %s%s(%s): %s" % (fill_prefix, field["prefix"], field["name"], field["path"], path_value))
+				print("%s***** %s%s" % (fill_prefix, field["prefix"], path_value))
 	
 	if len(shodan.settings['Out_Custom_Fields']) == 0:
 		return
+	fill_prefix = "\t\t\t\t\t"
 	#path_to_field["fields"] = []
 	#field = OrderedDict()
 	#path_to_field["fields"][]
