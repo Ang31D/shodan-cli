@@ -913,11 +913,13 @@ def show_json_path_as_field(shodan, service):
 	field["path"] = "_shodan.options.hostname"
 	field["name"] = "Scanned Host"
 	field["conditions"] = ["_shodan.options.hostname:exists", "_shodan.options.hostname:has-value"]
+	field["value"] = "json:path"
 	fields.append(field)
 	field = OrderedDict()
 	field["path"] = "http.title"
 	field["name"] = "Page Title"
 	field["conditions"] = ["http.title:exists", "http.title:has-value"]
+	field["value"] = "static:Yes"
 	fields.append(field)
 
 	for field in fields:
@@ -930,7 +932,11 @@ def show_json_path_as_field(shodan, service):
 			if not match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
 				all_condition_match = False
 		if all_condition_match:
-			path_exists, path_value = get_json_path(service._json, field["path"])
+			if field["value"].startswith("static:"):
+				path_exists = True
+				path_value = field["value"].split(":")[1]
+			elif field["value"].startswith("json:"):
+				path_exists, path_value = get_json_path(service._json, field["path"])
 			if path_exists:
 				print("%s***** %s(%s): %s" % (fill_prefix, field["name"], field["path"], path_value))
 	
