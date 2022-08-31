@@ -181,6 +181,7 @@ class ShodanSettings:
 		self.settings['Out_Service_Data'] = False
 		self.settings['Out_Service_Module'] = False
 		self.settings['Out_Service_JSON'] = False
+		self.settings['Out_Custom_Fields'] = []
 
 		self.settings['Match_On_Ports'] = []
 		self.settings['Match_On_Modules'] = []
@@ -239,6 +240,9 @@ class ShodanSettings:
 		if args.match_on_custom_conditions is not None:
 			for condition in args.match_on_custom_conditions.split(','):
 				self.settings['Match_On_Custom_Conditions'].append(condition.strip())
+		if args.out_custom_fields is not None:
+			for condition in args.out_custom_fields.split(','):
+				self.settings['Out_Custom_Fields'].append(condition.strip())
 		if args.match_on_crawler is not None:
 			for scanned_hostname in args.match_on_crawler.split(','):
 				self.settings['Match_On_Crawler'].append(scanned_hostname.strip())
@@ -879,7 +883,7 @@ def match_on_service(shodan, service):
 				return False
 
 	if len(shodan.settings['Match_On_Custom_Conditions']) > 0:
-		if not match_service_on_custom_condition(shodan, service):
+		if not match_service_on_custom_conditions(shodan, service):
 			return False
 
 	return True
@@ -902,87 +906,155 @@ def get_json_path(json_dict, path):
 		if last_field_index == i:
 			return True, json_data
 	return False, None
-def match_service_on_custom_condition(shodan, service):
-	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
-		return True
+def show_json_path_as_field(shodan, service):
+	if len(shodan.settings['Out_Custom_Fields']) == 0:
+		return
 
-	for custom in shodan.settings['Match_On_Custom_Conditions']:
-		node_value = None
-		#print("-match_service_on_custom_condition() custom '%s'" % custom)
+	fill_prefix = "\t\t\t\t\t"
+	fields = []
+	field = OrderedDict()
+	field["path"] = "_shodan.options.hostname"
+	field["name"] = "Scanned Host"
+	field["conditions"] = ["_shodan.options.hostname:exists", "_shodan.options.hostname:has-value"]
+	fields.append(field)
+	field = OrderedDict()
+	field["path"] = "http.title"
+	field["name"] = "Page Title"
+	field["conditions"] = ["http.title:exists", "http.title:has-value"]
+	fields.append(field)
+
+	for field in fields:
+		
+		custom = field["conditions"][0]
+		path = custom.split(':')[0].strip().lower()
+		field_condition = custom.split(':')[1].strip().lower()
+		if match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
+			path_exists, path_value = get_json_path(service._json, path)
+			if path_exists:
+				print("%s***** %s: %s # %s" % (fill_prefix, field["name"], path_value, field["path"]))
+	#path_to_field["fields"] = []
+	#field = OrderedDict()
+	#path_to_field["fields"][]
+	path_to_field = OrderedDict()
+	path_to_field["_shodan.options.hostname"] = "hostname"
+	path_to_field["http.title"] = "Page Title"
+	conditions = OrderedDict()
+	conditions["path"] = "exists"
+	conditions["value"] = "has-value"
+	found_path = False
+	
+	out_data = ""
+	for custom in shodan.settings['Out_Custom_Fields']:
 		if ':' in custom and len(custom.split(':')) == 2:
 			path = custom.split(':')[0].strip().lower()
 			field_condition = custom.split(':')[1].strip().lower()
 
+			if not match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
+				continue
+
 			path_exists, path_value = get_json_path(service._json, path)
-
 			path_type = type(path_value).__name__
-			if path_type == "NoneType" or path_type is None:
-				path_type = "null"
-			elif path_type == "dict":
-				path_type = "json"
-			elif path_type == "bool":
-				if field_condition.startswith("value="):
-					if path_value:
-						path_value = "true"
-					else:
-						path_value = "false"
-					#path_type = str(path_value).lower()
-			if shodan.settings['Debug_Mode']:
-				print("-match_service_on_custom_condition() condition '%s', path.exists: %s, path.type: %s" % (custom, path_exists, path_type))
+			print("json-path - path: %s, exists: %s, type: %s" % (path_type, path_exists, path))
 
-			if field_condition == "show" and path_exists and (path_type != "null" or path_type != "None" or path_value is not None):
-				print("-match_service_on_custom_condition() condition '%s', path.exists: %s, path.type: %s" % (custom, path_exists, path_type))
-				print("***************************************\n%s\n***************************************" % path_value)
-			if field_condition == "exists" or field_condition == "not-exists" or field_condition == "exist" or field_condition == "not-exist":
-				if field_condition.startswith("exist") and path_exists:
-					return True
-				if field_condition.startswith("not-exist") and not path_exists:
-					return True
-			if field_condition == "has-value" or field_condition == "no-value":
-				if field_condition == "has-value" and path_type != "null" and len(path_value) > 0:
-					return True
-				if field_condition == "no-value" and (path_type == "null" or len(path_value) == 0):
-					return True
-			#if not path_exists:
-			#	return False
-			if field_condition.startswith("equal=") or field_condition.startswith("value=") or field_condition.startswith("not-equal=") or field_condition.startswith("equals=") or field_condition.startswith("not-equals="):
-				condition_value = field_condition.split("=")[1]
-				if not field_condition.startswith("not-") and condition_value == path_value:
-					return True
-				if field_condition.startswith("not-") and condition_value != path_value:
-					return True
+			if path_exists:
+				found_path = True
+				if len(out_data) > 1:
+					out_data = "%s\n" % out_data
+				field_name = path
+				if field_name in path_to_field:
+					field_name = path_to_field[path]
+				out_data = "%s%s%s: %s" % (out_data, fill_prefix, field_name, path_value)
+	if found_path:
+		print("%s" % ("*" * 39 * 2))
+		print(out_data)
+		print("%s" % ("*" * 39 * 2))
 
-			if field_condition.startswith("contains=") or field_condition.startswith("not-contains=") or field_condition.startswith("has=") or field_condition.startswith("not-has="):
-				condition_value = field_condition.split("=")[1]
-				if not field_condition.startswith("not-") and path_type == "str" and condition_value in path_value.lower():
-					return True
-				if field_condition.startswith("not-") and path_type == "str" and condition_value not in path_value.lower():
-					return True
+def match_service_on_custom_conditions(shodan, service):
+	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
+		return True
 
-			if field_condition.startswith("type=") or field_condition.startswith("not-type="):
-				condition_value = field_condition.split("=")[1]
-				if not field_condition.startswith("not-") and condition_value == path_type:
-					return True
-				if field_condition.startswith("not-") and condition_value != path_type:
-					return True
+	for custom_condition in shodan.settings['Match_On_Custom_Conditions']:
+		if ':' in custom_condition and len(custom_condition.split(':')) == 2:
+			path = custom_condition.split(':')[0].strip().lower()
+			field_condition = custom_condition.split(':')[1].strip().lower()
 
-			if field_condition.startswith("len=") or field_condition.startswith("not-len=") or field_condition.startswith("min-len=") or field_condition.startswith("max-len="):
-				condition_value = field_condition.split("=")[1].strip()
-				if shodan.settings['Debug_Mode'] and path_value is not None:
-					print("%s(type: %s): %s, data.len: %s" % (field_condition, type(condition_value).__name__, condition_value, len(path_value)))
-				if type(condition_value).__name__ == "str" and condition_value.isnumeric():
-					condition_value = int(condition_value)
-					if field_condition.startswith("len=") and path_type != "null" and len(path_value) == condition_value:
-						return True
-					if field_condition.startswith("not-len=") and path_type != "null" and len(path_value) != condition_value:
-						return True
-					if field_condition.startswith("min-len=") and path_type != "null" and len(path_value) >= condition_value:
-						return True
-					if field_condition.startswith("max-len=") and path_type != "null" and len(path_value) <= condition_value:
-						return True
-			if shodan.settings['Debug_Mode']:
-				print("***************************************\n%s\n***************************************" % path_value)
+			#if match_on_json_condition(shodan, service._json, path, field_condition):
+			if match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
+				return True
+	return False
+def match_on_json_condition(json, path, field_condition, debug=False):
+	path_exists, path_value = get_json_path(json, path)
 
+	path_type = type(path_value).__name__
+	#if path_type == "NoneType" or path_type is None:
+	if path_type == "NoneType" or path_value is None:
+		path_type = "null"
+	elif path_type == "dict":
+		path_type = "json"
+	elif path_type == "bool":
+		if field_condition.startswith("value="):
+			if path_value:
+				path_value = "true"
+			else:
+				path_value = "false"
+			#path_type = str(path_value).lower()
+	if debug:
+		print("-match_on_json_condition() condition '%s:%s', path.exists: %s, data.type: %s" % (path, field_condition, path_exists, path_type))
+
+	if field_condition == "exists" or field_condition == "not-exists" or field_condition == "exist" or field_condition == "not-exist":
+		if field_condition.startswith("exist") and path_exists:
+			return True
+		if field_condition.startswith("not-exist") and not path_exists:
+			return True
+	if field_condition == "has-value" or field_condition == "no-value" or field_condition == "not-null":
+		#if (field_condition == "has-value" or field_condition == "not-null") and path_type != "null" and path_type != "bool" and path_value is not None and len(path_value) != 0:
+		if (field_condition == "has-value" or field_condition == "not-null") and path_type != "null" and path_type != "bool" and path_value is not None:
+			if (path_type == "str" or path_type == "list") and len(path_value) != 0:
+				return True
+			else:
+				return True
+		if field_condition == "no-value" and (path_type == "null" or path_value is None or len(path_value) == 0):
+			return True
+	#if not path_exists:
+	#	return False
+
+	if field_condition.startswith("equal=") or field_condition.startswith("value=") or field_condition.startswith("not-equal=") or field_condition.startswith("equals=") or field_condition.startswith("not-equals="):
+		condition_value = field_condition.split("=")[1]
+		if not field_condition.startswith("not-") and condition_value == path_value:
+			return True
+		if field_condition.startswith("not-") and condition_value != path_value:
+			return True
+
+	if field_condition.startswith("contains=") or field_condition.startswith("not-contains=") or field_condition.startswith("has=") or field_condition.startswith("not-has="):
+		condition_value = field_condition.split("=")[1]
+		if not field_condition.startswith("not-") and path_type == "str" and condition_value in path_value.lower():
+			return True
+		if field_condition.startswith("not-") and path_type == "str" and condition_value not in path_value.lower():
+			return True
+
+	if field_condition.startswith("type=") or field_condition.startswith("not-type="):
+		condition_value = field_condition.split("=")[1]
+		if not field_condition.startswith("not-") and condition_value == path_type:
+			return True
+		if field_condition.startswith("not-") and condition_value != path_type:
+			return True
+
+	if field_condition.startswith("len=") or field_condition.startswith("not-len=") or field_condition.startswith("min-len=") or field_condition.startswith("max-len="):
+		condition_value = field_condition.split("=")[1].strip()
+		if debug and path_value is not None:
+			print("%s(type: %s): %s, data.len: %s" % (field_condition, type(condition_value).__name__, condition_value, len(path_value)))
+		if type(condition_value).__name__ == "str" and condition_value.isnumeric():
+			condition_value = int(condition_value)
+			if field_condition.startswith("len=") and path_type != "null" and len(path_value) == condition_value:
+				return True
+			if field_condition.startswith("not-len=") and path_type != "null" and len(path_value) != condition_value:
+				return True
+			if field_condition.startswith("min-len=") and path_type != "null" and len(path_value) >= condition_value:
+				return True
+			if field_condition.startswith("max-len=") and path_type != "null" and len(path_value) <= condition_value:
+				return True
+	if debug:
+		print("***************************************\n%s\n***************************************" % path_value)
 	return False
 
 def filter_out_service(shodan, service):
@@ -1070,10 +1142,7 @@ def out_shodan(shodan):
 		
 	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
 
-	for service in filtered_services:
-		#if len(shodan.settings['Match_On_Custom_Conditions']) > 0:
-		#	if not match_service_on_custom_condition(shodan, service):
-		#		continue
+	for service in filtered_services: 
 		# // output service overview
 		fill_prefix = 1
 		service_header = "%s/%s" % (service.port, service.protocol.upper())
@@ -1205,6 +1274,8 @@ def out_shodan(shodan):
 
 		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
 			print("")
+
+		show_json_path_as_field(shodan, service)
 
 def filter_list_by_head_tail(shodan, data_list):
 	head_arg_index = get_arg_index(sys.argv, "--head")
@@ -1800,14 +1871,13 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
 	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
 	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
-	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; format <json-path>:<condition>[=<value>], supports comma-separated list" +
+	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>:<condition>', supports comma-separated list" +
 		"\n" +
 		"supported conditions:\n" +
-		"- check if the 'json-path' exists: exists, not-exists \n" +
-		"- compares values: equals, not-equals, contains (has), not-contains, has-value, no-value\n" +
-		"- compare value type: type=<type>, not-type=<type>\n" +
-		"- match on value length: len=<length>, not-len=<length>, min-len=<length>, max-len=<length>\n" +
-		"  * show: shows the value of the json-path:\n" +
+		"- match on 'json path': exists, not-exists\n" +
+		"- match on 'value': equals, not-equals, contains (has), not-contains, has-value, no-value, not-null\n" +
+		"- match on 'type': type=<type>, not-type=<type>\n" +
+		"- match on 'length': len=<length>, not-len=<length>, min-len=<length>, max-len=<length>\n" +
 		"\n")
 	parser.add_argument('--sort-date', dest='out_sort_by_scan_date', action='store_true', help="Output services by scan date")
 	parser.add_argument('--head', metavar="num", dest='out_head_service_count', type=int, help="output first number of services")
@@ -1830,7 +1900,9 @@ if __name__ == '__main__':
 		"number of Y(ear)(s), M(onth)(s), D(ay)(s), h(our)(s), m/min(s),minute(s), s/sec(s)/second(s)")
 	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
 	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
-	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information")
+	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information" +
+	"\n\n")
+	parser.add_argument('-cf', '--custom-field', dest='out_custom_fields', metavar="<condition>", help="Output field based on condition, see '-mc' for syntax")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('--debug', dest='debug_mode', action='store_true', help="Enabled debug mode")
 
