@@ -40,15 +40,15 @@ class JsonRuleEngine:
 		enable_rule_on = rule.enable_on
 		if enable_rule_on is not None:
 			print("Rule requirement found '%s', checking requirements..." % enable_rule_on)
-			#print("'%s'" % enable_rule_on)
+			
 			rule_condition = JsonCondition.simple_definition(enable_rule_on)
 			print("JsonCondition.simple_definition: %s" % rule_condition._definition)
-			if self.match_on_condition(json_dict, rule_condition):
-				print("Rule requirement found '%s', checking requirements..." % enable_rule_on)
-			else:
+			if not self.match_on_condition(json_dict, rule_condition):
 				if self._debug:
 					print("[*] Skipping Rule '%s'!" % rule.name)
-					return False
+				return False
+			print("Rule requirement found '%s', checking requirements..." % enable_rule_on)
+			
 	def match_on_condition(self, json_dict, condition):
 		print("[*] match_on_condition() : checking condition '%s' (loose match: %s) # derived from simple definition '%s'" % (condition.as_string(), str(condition.loose_match).lower(), str(condition.derived_from_simple).lower()))
 
@@ -171,6 +171,22 @@ class JsonRule:
 		if "conditions" in self._definition:
 			for json_condition in self._definition["conditions"]:
 				self._conditions.append(JsonCondition(json_condition))
+	@staticmethod
+	def template_definition():
+		definition_json_string = """
+		{
+  "name": null,
+  "description": null,
+  "owner": {
+    "researcher": null,
+    "company": null
+  },
+  "enable_on": null,
+  "conditions": []
+}
+		"""
+		return json.loads(definition_json_string)
+
 	@property
 	def name(self):
 		if "name" in self._definition:
@@ -201,21 +217,22 @@ class JsonCondition:
 		self._definition = json_condition
 	
 	@staticmethod
-	def simple_definition(definition):
+	def template_definition():
 		definition_json_string = """
 		    {
       "path": null,
       "compare": null,
       "match_on": null,
       "loose_match": true,
-      "definition": null
+      "_definition": null
     }
 		"""
-		condition_json = json.loads(definition_json_string)
-		condition_json["definition"] = definition
-		#definition
+		return json.loads(definition_json_string)
+	@staticmethod
+	def simple_definition(definition):
+		condition_json = JsonCondition.template_definition()
+		condition_json["_definition"] = definition
 		if ':' in definition and len(definition.split(':')) == 2:
-			#json_path = definition.split(':')[0].strip().lower()
 			condition_json["path"] = definition.split(':')[0].strip().lower()
 			match_condition = definition.split(':')[1].strip().lower()
 			if len(match_condition) > 0:
@@ -228,7 +245,7 @@ class JsonCondition:
 
 	@property
 	def derived_from_simple(self):
-		if "definition" in self._definition:
+		if "_definition" in self._definition:
 			return True
 		return False
 	def as_string(self):
@@ -350,3 +367,6 @@ if __name__ == '__main__':
 	#print(json.dumps(engine._json))
 	#data = json.dumps(engine._json, indent=4)
 	#print(data)
+	#json_rule = JsonRule.template_definition()
+	#print("")
+	#print(json.dumps(json_rule, indent=4))
