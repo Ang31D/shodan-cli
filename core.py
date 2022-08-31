@@ -52,7 +52,7 @@ class JsonRuleEngine:
 	def match_on_condition(self, json_dict, condition):
 		print("[*] match_on_condition() : checking condition '%s' (loose match: %s) # derived from simple definition '%s'" % (condition.as_string(), str(condition.loose_match).lower(), str(condition.derived_from_simple).lower()))
 
-		if condition.path is None or condition.compare is None:
+		if not condition.definition_is_valid:
 			if self._debug:
 				print("[!] match_on_condition() : invalid path or compare definition (%s), seems to be 'null'" % condition.as_string())
 			return False
@@ -239,6 +239,16 @@ class JsonCondition:
 			#definition_string = "%s=%s (loose match: %s)" % (definition_string, match_on, str(self.loose_match).lower())
 			definition_string = "%s=%s" % (definition_string, match_on)
 		return definition_string
+	@property
+	def definition_is_valid(self):
+		# // required fields
+		if self.path is None or self.compare is None:
+			return False
+		valid_compare_without_match_on = ["exists", "not-exists", "exist", "not-exist", "has-value", "no-value", "not-null"]
+		if self.compare not in valid_compare_without_match_on:
+			return False
+
+		return True
 	@property
 	def path(self):
 		return self._get_definition("path")
