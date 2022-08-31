@@ -907,9 +907,6 @@ def get_json_path(json_dict, path):
 			return True, json_data
 	return False, None
 def show_json_path_as_field(shodan, service):
-	if len(shodan.settings['Out_Custom_Fields']) == 0:
-		return
-
 	fill_prefix = "\t\t\t\t\t"
 	fields = []
 	field = OrderedDict()
@@ -924,14 +921,21 @@ def show_json_path_as_field(shodan, service):
 	fields.append(field)
 
 	for field in fields:
-		
-		custom = field["conditions"][0]
-		path = custom.split(':')[0].strip().lower()
-		field_condition = custom.split(':')[1].strip().lower()
-		if match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
-			path_exists, path_value = get_json_path(service._json, path)
+		#custom = field["conditions"][0]
+		all_condition_match = True
+		for custom in field["conditions"]:
+			path = custom.split(':')[0].strip().lower()
+			field_condition = custom.split(':')[1].strip().lower()
+			
+			if not match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
+				all_condition_match = False
+		if all_condition_match:
+			path_exists, path_value = get_json_path(service._json, field["path"])
 			if path_exists:
-				print("%s***** %s: %s # %s" % (fill_prefix, field["name"], path_value, field["path"]))
+				print("%s***** %s(%s): %s" % (fill_prefix, field["name"], field["path"], path_value))
+	
+	if len(shodan.settings['Out_Custom_Fields']) == 0:
+		return
 	#path_to_field["fields"] = []
 	#field = OrderedDict()
 	#path_to_field["fields"][]
