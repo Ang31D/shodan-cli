@@ -37,18 +37,22 @@ class JsonRuleEngine:
 
 	def match_on_rule(self, json_dict, rule):
 		print("[match_on_rule] %s" % rule._definition)
+
 		enable_rule_on = rule.enable_on
 		if enable_rule_on is not None:
-			print("Rule requirement found '%s', checking requirements..." % enable_rule_on)
-			
+			print("[*] Rule requirement found '%s', checking requirements..." % enable_rule_on)
 			rule_condition = JsonCondition.simple_definition(enable_rule_on)
-			print("JsonCondition.simple_definition: %s" % rule_condition._definition)
+			print("[*] JsonCondition.simple_definition: %s" % rule_condition._definition)
 			if not self.match_on_condition(json_dict, rule_condition):
 				if self._debug:
 					print("[*] Skipping Rule '%s'!" % rule.name)
 				return False
-			print("Rule requirement found '%s', checking requirements..." % enable_rule_on)
-			
+			print("[*] Rule requirement OK '%s'" % enable_rule_on)
+
+		print("[*] Checking Rule conditions...")
+		for condition in rule.conditions:
+			pass
+
 	def match_on_condition(self, json_dict, condition):
 		print("[*] match_on_condition() : checking condition '%s' (loose match: %s) # derived from simple definition '%s'" % (condition.as_string(), str(condition.loose_match).lower(), str(condition.derived_from_simple).lower()))
 
@@ -56,7 +60,48 @@ class JsonRuleEngine:
 			if self._debug:
 				print("[!] match_on_condition() : invalid path or compare definition (%s), seems to be 'null'" % condition.as_string())
 			return False
-		pass
+		if self.is_simple_condition(condition):
+			if self.match_on_simple_condition(json_dict, condition):
+				return True
+
+	def match_on_simple_condition(self, json_dict, condition):
+		path_exists, path_value = JsonRuleEngine.get_json_path(json_dict, condition.path)
+
+		path_type = type(path_value).__name__
+		if path_type == "NoneType" or path_value is None:
+			path_type = "null"
+		elif path_type == "dict":
+			path_type = "json"
+		elif path_type == "bool":
+			if field_condition.startswith("value="):
+				if path_value:
+					path_value = "true"
+				else:
+					path_value = "false"
+				#path_type = str(path_value).lower()
+
+		if (condition.compare == "exists" or condition.compare == "exist") and path_exists:
+			return True
+		if (condition.compare == "not-exists" or condition.compare == "not-exist") and not path_exists:
+			return True
+		if condition.compare == "not-null" and path_value is not None:
+			return True
+		if condition.compare == "null" and path_value is None:
+			return True
+		if condition.compare == "no-value" and path_value is not None:
+			if (path_type == "str" or path_type == "list") and len(path_value) == 0:
+				return True
+			#else:
+			#	return True
+		if condition.compare == "has-value" and path_value is not None:
+			if (path_type == "str" or path_type == "list") and len(path_value) > 0:
+				return True
+		return False
+
+	def is_simple_condition(self, condition):
+		if condition.is_simple_compare:
+			return True
+		return False
 
 	def match_on_conditions(self, json_dict, condition_rules):
 		if len(condition_rules) == 0:
@@ -244,29 +289,6 @@ class JsonCondition:
 		return JsonCondition(condition_json)
 
 	@property
-	def derived_from_simple(self):
-		if "_definition" in self._definition:
-			return True
-		return False
-	def as_string(self):
-		definition_string = self.path
-		definition_string = "%s:%s" % (definition_string, self.compare)
-		match_on = self.match_on
-		if match_on is not None:
-			#definition_string = "%s=%s (loose match: %s)" % (definition_string, match_on, str(self.loose_match).lower())
-			definition_string = "%s=%s" % (definition_string, match_on)
-		return definition_string
-	@property
-	def definition_is_valid(self):
-		# // required fields
-		if self.path is None or self.compare is None:
-			return False
-		valid_compare_without_match_on = ["exists", "not-exists", "exist", "not-exist", "has-value", "no-value", "not-null"]
-		if self.compare not in valid_compare_without_match_on:
-			return False
-
-		return True
-	@property
 	def path(self):
 		return self._get_definition("path")
 	@property
@@ -283,31 +305,47 @@ class JsonCondition:
 		if match_on is not None and "|" in match_on:
 			return True
 		return False
-	
 	@property
 	def loose_match(self):
 		# true for case insensitive, false for case sensitive
 		return self._get_definition("loose_match")
+
+	@property
+	def is_simple_compare(self):
+		simple_list = ["exists", "not-exists", "exist", "not-exist", "has-value", "no-value", "not-null"]
+		return self.compare in simple_list
+
+	@property
+	def derived_from_simple(self):
+		if "_definition" in self._definition:
+			return True
+		return False
+	def as_string(self):
+		definition_string = self.path
+		definition_string = "%s:%s" % (definition_string, self.compare)
+		match_on = self.match_on
+		if match_on is not None:
+			#definition_string = "%s=%s (loose match: %s)" % (definition_string, match_on, str(self.loose_match).lower())
+			definition_string = "%s=%s" % (definition_string, match_on)
+		return definition_string
+	
+	@property
+	def definition_is_valid(self):
+		# // required fields
+		if self.path is None or self.compare is None:
+			return False
+		valid_compare_without_match_on = ["exists", "not-exists", "exist", "not-exist", "has-value", "no-value", "not-null"]
+		if self.compare not in valid_compare_without_match_on:
+			return False
+
+		return True
+	
 
 	def _get_definition(self, name):
 		if name in self._definition:
 			return self._definition[name]
 		return None
 
-	def _init_definition(self):
-		if ':' in self._definition and len(self._definition.split(':')) == 2:
-			self._json_path = self._definition.split(':')[0].strip().lower()
-
-			match_condition = self._definition.split(':')[1].strip().lower()
-			if len(match_condition) == 0:
-				return
-			if '=' in match_condition:
-				self._condition = match_condition.split('=')[0].strip().lower()
-				self._match_on = match_condition.split('=')[1].strip().lower()
-			else:
-				self._condition = match_condition.split('=')[0].strip().lower()
-
-#rule_definition = JsonCondition("_shodan.module:value=http")
 
 def get_json_from_file(file_path):
 	if os.path.isfile(file_path):
