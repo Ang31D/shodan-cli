@@ -60,7 +60,7 @@ class JsonRuleEngine:
 			if self._debug:
 				print("[!] match_on_condition() : invalid path or compare definition (%s), seems to be 'null'" % condition.as_string())
 			return False
-		if self.is_simple_condition(condition):
+		if condition.is_simple_compare:
 			if self.match_on_simple_condition(json_dict, condition):
 				return True
 
@@ -96,11 +96,6 @@ class JsonRuleEngine:
 		if condition.compare == "has-value" and path_value is not None:
 			if (path_type == "str" or path_type == "list") and len(path_value) > 0:
 				return True
-		return False
-
-	def is_simple_condition(self, condition):
-		if condition.is_simple_compare:
-			return True
 		return False
 
 	def match_on_conditions(self, json_dict, condition_rules):
@@ -312,7 +307,7 @@ class JsonCondition:
 
 	@property
 	def is_simple_compare(self):
-		simple_list = ["exists", "not-exists", "exist", "not-exist", "has-value", "no-value", "not-null"]
+		simple_list = ["exists", "not-exists", "exist", "not-exist", "has-value", "no-value", "not-null", "null"]
 		return self.compare in simple_list
 
 	@property
