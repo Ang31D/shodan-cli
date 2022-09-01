@@ -122,11 +122,6 @@ class JsonRuleEngine:
 				return True
 			print("[*] match_on_condition() : simple condition 'NOT OK' - %s" % condition.as_string())
 		elif condition.is_complex_compare:
-			#if not conditio.has_multi_values:
-			#	self.match_on_complex_condition(json_dict, condition, match_on)
-			#else:
-			#	for match_on_value in condition.match_on:
-			#		self.match_on_complex_condition(json_dict, condition, match_on_value)
 			if self.match_on_complex_condition(json_dict, condition):
 				print("[*] match_on_condition() : complex condition 'OK' - %s" % condition.as_string())
 				return True
@@ -190,6 +185,7 @@ class JsonRuleEngine:
 		else:
 			for match_on_value in condition.match_on:
 				if self.match_on_complex_condition_value(json_dict, condition, match_on_value):
+					print("[*] match_on_complex_condition() : condition match '%s' 'OK' - %s" % (match_on_value, condition.as_string()))
 					return True
 			return False
 	def match_on_complex_condition_value(self, json_dict, condition, match_on_value):
