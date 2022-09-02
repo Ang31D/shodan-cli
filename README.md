@@ -6,12 +6,9 @@ The python script `shodan-cli.py` utilizes the shodan api to fetch host informat
 
 Sample hosts from shodan `91.195.240.94` , `198.98.62.253`
 
-```
-usage: shodan-cli.py [-h] [--api-info] [--account-profile] [-t TARGET] [-c] [-L] [--cache-dir <path>] [-H] [-mp port[,port,...]] [-ms service[,service,...]] [-mi id[,id,...]] [-mH host[,host,...]]
-                     [-mC id[,id,...]] [-mI id[,id,...]] [-fp port[,port,...]] [-fs service[,service,...]] [-fH host[,host,...]] [-mc <condition>] [--sort-date] [--head num] [--tail num] [-d] [-m]
-                     [--host-json] [-sj] [--time [<datetime range> ...]] [--since <date-from>] [--after <after-date>] [--until <date-to>] [--before <before-date>] [-F] [--rm] [--host-only] [-cf <condition>]
-                     [-n] [--hide-hostname] [-v] [--debug]
+## usage
 
+```
 Shodan Cli in python
 
 options:
