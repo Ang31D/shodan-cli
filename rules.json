@@ -1,0 +1,88 @@
+[
+    {
+        "name": "shodan-http-module",
+        "description": "TEST - match on http module for shodan host",
+        "owner": {
+            "researcher": "Kim Bokholm",
+            "company": "NTT Security"
+        },
+        "enable_on": "_shodan.module:begins=http,_shodan.id=99c2250d-6b98-408a-adaf-01be8a90bc3e|f69d25f2-fc61-445a-93ce-3f0b1e9d3232",
+        "conditions": [
+            {
+                "path": "_shodan.module",
+                "compare": "exists",
+                "match_on": null,
+                "loose_match": true
+            },
+            {
+                "path": "_shodan.module",
+                "compare": "equals",
+                "match_on": "http|https",
+                "loose_match": true
+            }
+        ],
+        "fields": [
+            {
+                "id": "shodan.id",
+                "text": "Shodan - ID",
+                "path": "_shodan.id",
+                "condition": "_shodan.id"
+            },
+            {
+                "id": "http.page.title",
+                "text": "Page Title",
+                "path": "http.title",
+                "condition": "http.title:exists,http.title:min-len=1"
+            },
+            {
+                "id": "http.response.header.host",
+                "text": "'Host' Header",
+                "path": "http.host",
+                "condition": "http.host:exists,http.host:min-len=1"
+            }
+        ]
+    },
+    {
+        "name": "shodan-http-module",
+        "description": "match on http module for shodan host",
+        "owner": {
+            "researcher": "Kim Bokholm",
+            "company": "NTT Security"
+        },
+        "enable_on": "_shodan:!exists,_shodan:exists,_shodan.id=79bf4931-f2b5-4fb1-8c7e-2c44c1066307",
+        "conditions": [
+            {
+                "path": "_shodan.module",
+                "compare": "exists",
+                "match_on": null,
+                "loose_match": true
+            },
+            {
+                "path": "_shodan.module",
+                "compare": "equals",
+                "match_on": "http|https",
+                "loose_match": true
+            }
+        ],
+        "fields": [
+            {
+                "id": "shodan.id",
+                "text": "Shodan - ID",
+                "path": "_shodan.id",
+                "condition": "_shodan.id"
+            },
+            {
+                "id": "http.page.title",
+                "text": "Page Title",
+                "path": "http.title",
+                "condition": "http.title:exists,http.title:min-len=1"
+            },
+            {
+                "id": "http.response.header.host",
+                "text": "'Host' Header",
+                "path": "http.host",
+                "condition": "http.host:exists,http.host:min-len=1"
+            }
+        ]
+    }
+]
