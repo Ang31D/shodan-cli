@@ -169,6 +169,7 @@ class ShodanSettings:
 
 		self.settings['Target'] = None
 		self.settings['Include_History'] = False
+		self.settings['No_DNS_Lookup'] = args.no_dns_lookup
 
 		self.settings['Verbose_Mode'] = False
 		self.settings['Out_Host_Only'] = False
@@ -949,7 +950,7 @@ def show_json_path_as_field(shodan, service):
 			elif field["value"].startswith("json:"):
 				path_exists, path_value = get_json_path(service._json, field["path"])
 				path_value = "%s: %s" % (field["name"], path_value)
-			if path_exists:
+			if path_exists and shodan.settings["Verbose_Mode"]:
 				#print("%s***** %s%s(%s): %s" % (fill_prefix, field["prefix"], field["name"], field["path"], path_value))
 				print("%s***** %s%s" % (fill_prefix, field["prefix"], path_value))
 	
@@ -1116,12 +1117,13 @@ def out_shodan(shodan):
 	
 	host = Shodan_Host(shodan.settings, host_json, shodan.settings['Include_History'])
 
-	ip_host = ip_to_host(host.ip)
-	if ip_host is not None:
-		#print("IP Address to Host: %s" % ip_host)
-		print("Target: %s (Host: %s)" % (shodan.settings["Target"], ip_host))
-	else:
-		print("Target: %s" % shodan.settings["Target"])
+	if not shodan.settings['No_DNS_Lookup']:
+		ip_host = ip_to_host(host.ip)
+		if ip_host is not None:
+			#print("IP Address to Host: %s" % ip_host)
+			print("Target: %s (Host: %s)" % (shodan.settings["Target"], ip_host))
+		else:
+			print("Target: %s" % shodan.settings["Target"])
 
 	print("Last Update: %s" % host.last_update)
 	print("")
@@ -1147,6 +1149,8 @@ def out_shodan(shodan):
 		print("Vulns: %s" % ', '.join(host.vulns))
 		print("")
 	#
+
+	print("Service scans: %s" % len(host.services))
 	
 	if shodan.settings['Out_Host_JSON']:
 		host_data = ["[*] %s" % l for l in host.json.split('\n') if len(l) > 0 ]
@@ -1927,6 +1931,7 @@ if __name__ == '__main__':
 	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information" +
 	"\n\n")
 	parser.add_argument('-cf', '--custom-field', dest='out_custom_fields', metavar="<condition>", help="Output field based on condition, see '-mc' for syntax")
+	parser.add_argument('-n', '--no-dns', dest='no_dns_lookup', action='store_true', help="Never do DNS resolution/Always resolve")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('--debug', dest='debug_mode', action='store_true', help="Enabled debug mode")
 
