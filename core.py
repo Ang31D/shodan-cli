@@ -769,14 +769,13 @@ class ConditionalField:
 		self._id = self._json["id"]
 		self._text = self._json["text"]
 		self._path = self._json["path"]
+		self._value = None
 		self._conditions = []
 		self._init_condition()
 
 	def _init_condition(self):
 		for condition_definition in self._json["condition"].split(","):
-			#self._conditions.append(JsonCondition(condition))
-			condition = JsonCondition.simple_definition(condition_definition)
-			self._conditions.append(condition)
+			self._conditions.append(JsonCondition.simple_definition(condition_definition))
 
 	def as_conditions(self):
 		definitions = []
