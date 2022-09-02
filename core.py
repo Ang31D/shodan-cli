@@ -1,5 +1,6 @@
 import json
 import os
+import re
 
 def json_prettify(json_data):
 	json_type = type(json_data).__name__
@@ -474,6 +475,15 @@ class JsonRuleEngine:
 						return True
 					return False
 
+		if condition.COMPARE_REGEX == condition.compare:
+			if match_on_value is None or "str" != match_on_type:
+				return False
+			if path_value is not None:
+				if re.match(path_value, string_date):
+					return True
+				if condition.is_negate:
+					return True
+
 		return False
 
 class JsonRule:
@@ -578,6 +588,8 @@ class JsonCondition:
 	COMPARE_LEN = "len"
 	COMPARE_MIN_LEN = "min-len"
 	COMPARE_MAX_LEN = "max-len"
+	COMPARE_REGEX = "regex"
+	
 	def __init__(self, json_condition):
 		self._definition = json_condition
 		self._compare = self.COMPARE_INVALID
@@ -700,6 +712,8 @@ class JsonCondition:
 			return True
 		if self.COMPARE_MAX_LEN == self.compare:
 			return True
+		if self.COMPARE_REGEX == self.compare:
+			return True
 		return False
 
 	@property
@@ -793,12 +807,12 @@ def get_dummy_json_rules():
 [
   {
     "name": "shodan-http-module",
-    "description": "match on http module for shodan host",
+    "description": "TEST - match on http module for shodan host",
     "owner": {
       "researcher": "Kim Bokholm",
       "company": "NTT Security"
     },
-    "enable_on": "_shodan.id=79bf4931-f2b5-4fb1-8c7e-2c44c1066307",
+    "enable_on": "_shodan.module:begins=http,_shodan.id=99c2250d-6b98-408a-adaf-01be8a90bc3e|f69d25f2-fc61-445a-93ce-3f0b1e9d3232",
     "conditions": [
       {
         "path": "_shodan.module",
@@ -843,17 +857,24 @@ def get_dummy_json_rules():
 	return json.loads(json_string)
 
 def main(args):
-	#data_dir = "/home/bob104/tools/shodan-cli/shodan-data"
-	data_dir = "/home/angeld/Workspace/coding/shodan-py/shodan-data"
+	root_dir = "/home/bob104/tools/shodan-cli"
+	#root_dir = "/home/angeld/Workspace/coding/shodan-py"
+	data_dir = os.path.join(root_dir, "shodan-data")
+	#data_dir = "/home/angeld/Workspace/coding/shodan-py/shodan-data"
 	target = "91.195.240.94"
 	json_file = "host.%s.json" % target
 	file_path = os.path.join(data_dir, json_file)
+	rules_file = os.path.join(root_dir, "rules.json")
 	if not os.path.isfile(file_path):
 		print("ERROR - Missing file '%s'" % file_path)
 		return
+	if not os.path.isfile(rules_file):
+		print("ERROR - Missing file '%s'" % rules_file)
+		return
 
 	json_data = get_json_from_file(file_path)
-	json_rules = get_dummy_json_rules()
+	#json_rules = get_dummy_json_rules()
+	json_rules = get_json_from_file(rules_file)
 
 	engine = JsonRuleEngine(json_rules)
 	engine._debug = args.debug_mode
@@ -871,7 +892,7 @@ def main(args):
 		#	if condition.match_on is None:
 		#		print("skipping match on value")
 
-	print("")
+	#print("")
 	json_services = json_data["data"]
 	for json_service in json_services:
 		#print(json_prettify(json_service))
@@ -894,7 +915,7 @@ def main(args):
 				print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
 			if engine.match_on_field(json_service, field):
 				#print("field id: %s, path: %s, text: '%s'" % (field.id, field.path, field.text))
-				found_match = True
+				#found_match = True
 				if engine._debug:
 					print("[*] Field '%s' - match 'OK'" % field.id)
 				field_value = field.get_json(json_service)
