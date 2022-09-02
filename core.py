@@ -827,12 +827,6 @@ def get_dummy_json_rules():
         "condition": "http.title:exists,http.title:min-len=1"
       },
       {
-        "id": "http.page.title.2",
-        "text": "Page Title",
-        "path": "http.title",
-        "condition": "http.title:exists"
-      },
-      {
         "id": "http.response.header.host",
         "text": "'Host' Header",
         "path": "http.host",
@@ -899,13 +893,11 @@ def main(args):
 				print("")
 				print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
 			if engine.match_on_field(json_service, field):
-				print("field id: %s, path: %s, text: '%s'" % (field.id, field.path, field.text))
+				#print("field id: %s, path: %s, text: '%s'" % (field.id, field.path, field.text))
 				found_match = True
 				if engine._debug:
 					print("[*] Field '%s' - match 'OK'" % field.id)
 				field_value = field.get_json(json_service)
-				if engine._debug:
-					print("field.type: %s" % type(field_value).__name__)
 				if field_value is not None:
 					print("%s: %s" % (field.text, field_value))
 				#print(field_value)
