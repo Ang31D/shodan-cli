@@ -957,7 +957,8 @@ def show_json_path_as_field(shodan, service):
 	
 	if len(shodan.settings['Out_Custom_Fields']) == 0:
 		return
-	fill_prefix = "\t\t\t\t\t"
+	#fill_prefix = "\t\t\t\t\t"
+	fill_prefix = "\t\t\t\t"
 	#path_to_field["fields"] = []
 	#field = OrderedDict()
 	#path_to_field["fields"][]
@@ -971,6 +972,8 @@ def show_json_path_as_field(shodan, service):
 	
 	out_data = ""
 	for custom in shodan.settings['Out_Custom_Fields']:
+		if ':' not in custom:
+			custom = "%s:exists" % custom
 		if ':' in custom and len(custom.split(':')) == 2:
 			path = custom.split(':')[0].strip().lower()
 			field_condition = custom.split(':')[1].strip().lower()
@@ -980,7 +983,7 @@ def show_json_path_as_field(shodan, service):
 
 			path_exists, path_value = get_json_path(service._json, path)
 			path_type = type(path_value).__name__
-			print("json-path - path: %s, exists: %s, type: %s" % (path_type, path_exists, path))
+			#print("json-path - path: %s, exists: %s, type: %s" % (path_type, path_exists, path))
 
 			if path_exists:
 				found_path = True
@@ -989,25 +992,27 @@ def show_json_path_as_field(shodan, service):
 				field_name = path
 				if field_name in path_to_field:
 					field_name = path_to_field[path]
-				out_data = "%s%s%s: %s" % (out_data, fill_prefix, field_name, path_value)
+				out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
-		print("%s" % ("*" * 39 * 2))
+		#print("%s" % ("*" * 39 * 2))
 		print(out_data)
-		print("%s" % ("*" * 39 * 2))
+		#print("%s" % ("*" * 39 * 2))
 
 def match_service_on_custom_conditions(shodan, service):
 	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
 		return True
 
 	for custom_condition in shodan.settings['Match_On_Custom_Conditions']:
+		if ':' not in custom_condition:
+			custom_condition = "%s:exists" % custom_condition
 		if ':' in custom_condition and len(custom_condition.split(':')) == 2:
 			path = custom_condition.split(':')[0].strip().lower()
 			field_condition = custom_condition.split(':')[1].strip().lower()
 
 			#if match_on_json_condition(shodan, service._json, path, field_condition):
-			if match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
-				return True
-	return False
+			if not match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
+				return False
+	return True
 def match_on_json_condition(json, path, field_condition, debug=False):
 	path_exists, path_value = get_json_path(json, path)
 
