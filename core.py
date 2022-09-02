@@ -80,7 +80,8 @@ class JsonRuleEngine:
 			print("[*] Checking conditions for rule '%s'" % rule.name)
 		if rule.has_conditions:
 			if not self.match_on_rule_conditions(json_dict, rule):
-				print("[!] Rule '%s' - conditions 'NOT OK'" % rule.name)
+				if self._debug:
+					print("[!] Rule '%s' - conditions 'NOT OK'" % rule.name)
 				return False
 		if self._debug:
 			print("[*] Rule '%s' - conditions 'OK'" % rule.name)
@@ -109,6 +110,17 @@ class JsonRuleEngine:
 				return False
 		return True
 	def match_on_rule_conditions(self, json_dict, rule):
+		if self._debug:
+			print("[*] Rule '%s' - conditions definition '%s'" % (rule.name, rule.as_conditions()))
+		for rule_condition in rule.conditions:
+			if self.match_on_condition(json_dict, rule_condition):
+				if self._debug:
+					print("[*] match_on_rule_conditions() : rule conditions - 'OK' - %s" % rule_condition.as_string())
+				return True
+		if self._debug:
+			print("[!] match_on_rule_conditions() : rule condition - 'NOT OK' - %s" % rule_condition.as_string())
+		return False
+	def match_on_rule_conditions_old(self, json_dict, rule):
 		if self._debug:
 			print("[*] Rule '%s' - conditions definition '%s'" % (rule.name, rule.as_conditions()))
 		for rule_condition in rule.conditions:
@@ -662,9 +674,14 @@ class JsonCondition:
 		if self.has_multi_values:
 			return self._get_definition("match_on").split("|")
 		return self._get_definition("match_on")
+	#@property
+	#def match_on_type(self):
+	#	return type(self.match_on).__name__
 	@property
 	def has_multi_values(self):
 		match_on = self._get_definition("match_on")
+		if "str" != type(match_on).__name__:
+			return False
 		if match_on is not None and "|" in match_on:
 			return True
 		return False
@@ -855,109 +872,119 @@ def get_dummy_json_rules():
 #"enable_on": "_shodan:exists=module,_shodan.module:equals=http|https",
 #"enable_on": "_shodan:exists=module,_shodan.module:begins=http",
 	return json.loads(json_string)
+def run_rules_on_json(rule_engine, json_data):
+	for rule in rule_engine.rules:
+		#print(json_prettify(rule._definition))
+		if not rule_engine.match_on_rule_requirements(json_data, rule):
+			continue
+		if not rule_engine.match_on_rule(json_data, rule):
+			continue
 
+		print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
+		filler = "*" * int(((39 * 2 - len("rule definition")-1) / 2))
+		print("%s rule definition %s" % (filler, filler))
+		#print(json_prettify(rule._definition))
+		print("%s" % ("*" * 39 * 2))
+
+		hit_on_fields = []
+		for field in rule.fields:
+			if rule_engine._debug:
+				print("")
+				print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
+			if rule_engine.match_on_field(json_data, field):
+				hit_on_fields.append(field)
+				#print("field id: %s, path: %s, text: '%s'" % (field.id, field.path, field.text))
+				#found_match = True
+				if rule_engine._debug:
+					print("[*] Field '%s' - match 'OK'" % field.id)
+				field_value = field.get_json(json_data)
+				if field_value is not None:
+					print("%s: %s" % (field.text, field_value))
+				#print(field_value)
+			else:
+				if rule_engine._debug:
+					print("[*] Skipping Field - '%s' with condition '%s'!" % (field.id, field.as_conditions()))
+def run_rules_on_json_file(rule_engine, json_file):
+	if not os.path.isfile(json_file):
+		print("ERROR - Missing 'json' file '%s'" % json_file)
+		return
+	#print("Running %s rules on %s" % (len(rule_engine.rules), json_file))
+	json_data = get_json_data(json_file)
+	if json_data is None:
+		print("Failed to get json data from '%s'" % json_file)
+		return
+
+	if "list" == type(json_data).__name__:
+		if len(json_data) == 0:
+			print("Missing json data in '%s'" % json_file)
+			return
+		if len(json_data) > 0 and "dict" != type(json_data[0]).__name__:
+			print("Unknown json data in '%s'" % json_file)
+			return
+
+		for json_item in json_data:
+			run_rules_on_json(rule_engine, json_item)
+			#break
+
+	elif "dict" == type(json_data).__name__:
+		print("run_rules_on_json_file() : json_data.type: dict")
+		run_rules_on_json(rule_engine, json_data)
+
+	else:
+		print("Unknown json data in '%s'" % json_file)
+		return
+
+def get_json_data(file_path):
+	json_data = get_json_from_file(file_path)
+	if "dict" == type(json_data).__name__:
+		if "data" in json_data:
+			return json_data["data"]
+		return json_data
+	return None
 def main(args):
 	root_dir = "/home/bob104/tools/shodan-cli"
 	#root_dir = "/home/angeld/Workspace/coding/shodan-py"
 	data_dir = os.path.join(root_dir, "shodan-data")
 	#data_dir = "/home/angeld/Workspace/coding/shodan-py/shodan-data"
 	target = "91.195.240.94"
-	json_file = "host.%s.json" % target
-	file_path = os.path.join(data_dir, json_file)
-	rules_file = os.path.join(root_dir, "rules.json")
-	if not os.path.isfile(file_path):
-		print("ERROR - Missing file '%s'" % file_path)
-		return
+	json_filename = "host.%s.json" % target
+	json_file = os.path.join(data_dir, json_filename)
+
+	default_rule_filename = "rules.json"
+	rules_file = os.path.join(root_dir, default_rule_filename)
+
+	if args.custom_rule_file is not None:
+		rules_file = args.custom_rule_file
+
+	if args.custom_json_file is not None:
+		json_file = args.custom_json_file
+	elif args.custom_json_file_from_target_host is not None:
+		json_filename = "host.%s.json" % args.custom_json_file_from_target_host
+		json_file = os.path.join(data_dir, json_filename)
+
 	if not os.path.isfile(rules_file):
-		print("ERROR - Missing file '%s'" % rules_file)
+		print("ERROR - Missing 'rules' file '%s'" % rules_file)
 		return
 
-	json_data = get_json_from_file(file_path)
+	if not os.path.isfile(json_file):
+		print("ERROR - Missing 'json' file '%s'" % json_file)
+		return
+
+	json_data = get_json_from_file(json_file)
 	#json_rules = get_dummy_json_rules()
 	json_rules = get_json_from_file(rules_file)
 
 	engine = JsonRuleEngine(json_rules)
 	engine._debug = args.debug_mode
-	for rule in engine.rules:
-		break
-		print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
-		if engine._debug:
-			filler = "*" * int(((39 * 2 - len("rule definition")-1) / 2))
-			print("%s rule definition %s" % (filler, filler))
-			print(json_prettify(rule._definition))
-			print("%s" % ("*" * 39 * 2))
 
-		#for condition in rule.conditions:
-		#	print("definition: %s" % condition._definition)
-		#	if condition.match_on is None:
-		#		print("skipping match on value")
-
-	#print("")
-	json_services = json_data["data"]
-	for json_service in json_services:
-		#print(json_prettify(json_service))
-		if not engine.match_on_rule(json_service, engine.rules[0]):
-			if engine._debug:
-				print("[*] Rule '%s' - match 'NOT OK'" % rule.name)
-			continue
-		#if engine._debug:
-		#	print("[*] Rule '%s' - match 'OK'" % rule.name)
-		print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
-		filler = "*" * int(((39 * 2 - len("rule definition")-1) / 2))
-		print("%s rule definition %s" % (filler, filler))
-		print(json_prettify(rule._definition))
-		print("%s" % ("*" * 39 * 2))
-
-		found_match = False
-		for field in rule.fields:
-			if engine._debug:
-				print("")
-				print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
-			if engine.match_on_field(json_service, field):
-				#print("field id: %s, path: %s, text: '%s'" % (field.id, field.path, field.text))
-				#found_match = True
-				if engine._debug:
-					print("[*] Field '%s' - match 'OK'" % field.id)
-				field_value = field.get_json(json_service)
-				if field_value is not None:
-					print("%s: %s" % (field.text, field_value))
-				#print(field_value)
-			else:
-				if engine._debug:
-					print("[*] Skipping Field - '%s' with condition '%s'!" % (field.id, field.as_conditions()))
-			#break
-		if found_match:
-			break
-
-		#break
-	return
-	#print(json.dumps(engine._json))
-	#data = json.dumps(engine._json, indent=4)
-	#print(data)
-	#json_rule = JsonRule.template_definition()
-	#print("")
-	#print(json.dumps(json_rule, indent=4))
-	print("")
-	print("")
-	print("")
-	print("")
-	service_count = 0
-	stop_at = 3
-	for service_json in json_services:
-		service_count += 1
-		for rule in engine.rules:
-			if not engine.match_on_rule_requirements(service_json, rule):
-				continue
-			if not engine.match_on_rule(service_json, rule):
-				continue
-			print("[*] Rule '%s' - match 'OK'" % rule.name)
-		if service_count == stop_at:
-			break
-
+	run_rules_on_json_file(engine, json_file)
 
 if __name__ == '__main__':
 	import argparse
 	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Test - Json Rule Engine")
 	parser.add_argument('-d', '--debug', dest='debug_mode', action='store_true', help="Enabled debug mode")
+	parser.add_argument('-r', '--rule-file', dest='custom_rule_file', help="Custom rules file")
+	parser.add_argument('-j', '--json-file', dest='custom_json_file', help="Custom json file")
+	parser.add_argument('-t', '--target', dest='custom_json_file_from_target_host', help="Target to json file")
 	args = parser.parse_args()
 	main(args)
