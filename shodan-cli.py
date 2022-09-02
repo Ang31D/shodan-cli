@@ -170,6 +170,7 @@ class ShodanSettings:
 		self.settings['Target'] = None
 		self.settings['Include_History'] = False
 		self.settings['No_DNS_Lookup'] = args.no_dns_lookup
+		self.settings['Out_No_Hostname'] = args.out_no_hostname
 
 		self.settings['Verbose_Mode'] = False
 		self.settings['Out_Host_Only'] = False
@@ -1136,8 +1137,9 @@ def out_shodan(shodan):
 		os_list = host.get_os_by_services()
 		if len(os_list) > 0:
 			print("OS: %s # based on services!" % ', '.join(os_list))
-	print("Hostnames: %s" % ', '.join(host.hostnames))
-	print("Domains: %s" % ', '.join(host.domains))
+	if not shodan.settings["Out_No_Hostname"]:
+		print("Hostnames: %s" % ', '.join(host.hostnames))
+		print("Domains: %s" % ', '.join(host.domains))
 	print("Ports: %s" % ", ".join([str(int) for int in host.host_ports])) # convert int to str
 	print("Location: %s" % host.location.as_string())
 	print("")
@@ -1150,7 +1152,7 @@ def out_shodan(shodan):
 		print("")
 	#
 
-	print("Service scans: %s" % len(host.services))
+	print("Total Service scans: %s" % len(host.services))
 	
 	if shodan.settings['Out_Host_JSON']:
 		host_data = ["[*] %s" % l for l in host.json.split('\n') if len(l) > 0 ]
@@ -1932,6 +1934,7 @@ if __name__ == '__main__':
 	"\n\n")
 	parser.add_argument('-cf', '--custom-field', dest='out_custom_fields', metavar="<condition>", help="Output field based on condition, see '-mc' for syntax")
 	parser.add_argument('-n', '--no-dns', dest='no_dns_lookup', action='store_true', help="Never do DNS resolution/Always resolve")
+	parser.add_argument('--hide-hostname', dest='out_no_hostname', action='store_true', help="Hide hostnames and domains from overview")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('--debug', dest='debug_mode', action='store_true', help="Enabled debug mode")
 
