@@ -93,7 +93,6 @@ class JsonRuleEngine:
 				print("[*] Rule '%s' requirements - 'NONE'" % rule.name)
 			return True
 		
-		#enable_on_definitions = rule.enable_on.split(",")
 		for enable_on_definition in rule.requirement_definitions:
 			condition = JsonCondition.simple_definition(enable_on_definition)
 			if self._debug:
@@ -537,6 +536,7 @@ class JsonRule:
 	def template_definition():
 		definition_json_string = """
 		{
+  "id": null,
   "name": null,
   "description": null,
   "owner": {
@@ -544,7 +544,9 @@ class JsonRule:
     "company": null
   },
   "enable_on": null,
-  "conditions": []
+  "conditions": [],
+  "fields": [],
+  "data": null
 }
 		"""
 		return json.loads(definition_json_string)
@@ -665,7 +667,8 @@ class JsonCondition:
       "compare": null,
       "match_on": null,
       "loose_match": true,
-      "_definition": null
+      "_definition": null,
+      "_extended": null
     }
 		"""
 		return json.loads(definition_json_string)
@@ -728,7 +731,7 @@ class JsonCondition:
 		return None
 	@property
 	def is_extended(self):
-		if "_extended" in self._definition:
+		if "_extended" in self._definition and self._definition["_extended"] is not None:
 			return True
 		return False
 	@property
@@ -818,7 +821,6 @@ class ConditionalField:
 	def __init__(self, json_field):
 		self._definition = json_field
 		self._id = self._definition["id"]
-		self._text = self._definition["text"]
 		self._path = self._definition["path"]
 		self._value = None
 		self._conditions = []
@@ -827,6 +829,17 @@ class ConditionalField:
 	def _init_condition(self):
 		for condition_definition in self._definition["condition"].split(","):
 			self._conditions.append(JsonCondition.simple_definition(condition_definition))
+
+	@staticmethod
+	def template_definition():
+		definition_json_string = """
+		    {
+      "id": null,
+      "path": null,
+      "condition": null
+    }
+		"""
+		return json.loads(definition_json_string)
 
 	def as_conditions(self):
 		definitions = []
@@ -849,9 +862,6 @@ class ConditionalField:
 	@property
 	def id(self):
 		return self._id
-	@property
-	def text(self):
-		return self._text
 	@property
 	def path(self):
 		return self._path
