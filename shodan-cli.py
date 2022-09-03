@@ -1452,12 +1452,38 @@ def list_cache(shodan, target=None):
 				out_data = "%s\t" % (out_data)
 			host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
 			out_data = "%sPorts: %s" % (out_data, host_ports)
-			
+
+		if not match_cached_host_on_condition(shodan, host):
+			continue
 		#print(out_data)
 		out_cache_list.append(out_data)
 	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
 	for out_data in out_cache_list:
 		print(out_data)
+
+def match_cached_host_on_condition(shodan, host):
+	if not match_on_cached_host(shodan, host):
+		return False
+	if filter_out_cached_host(shodan, host):
+		return False
+
+	return True
+def match_on_cached_host(shodan, host):
+	# // filter IN host based on conditions
+	if len(shodan.settings['Match_On_Ports']) > 0:
+		for port in host.host_ports:
+			if port in shodan.settings['Match_On_Ports']:
+				return True
+		return False
+	return True
+def filter_out_cached_host(shodan, host):
+	# // filter OUT host based on conditions
+	if len(shodan.settings['Filter_Out_Ports']) > 0:
+		for port in host.host_ports:
+			if port in shodan.settings['Filter_Out_Ports']:
+				return True
+	return False
+
 def cache_target_list(shodan, target_file):
 	print("[!] 'cache_target_list' function deprecated!")
 	return
