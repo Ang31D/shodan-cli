@@ -1,45 +1,55 @@
 [
-    {
-        "name": "shodan-http-products",
-        "description": "match web products from shodan api host",
-        "owner": {
-            "researcher": "John Doe",
-            "company": "Company X"
-        },
-        "enable_on": "_shodan,_shodan.module:begins=http",
-        "conditions": [
-            {
-                "path": "product",
-                "compare": "exists",
-                "match_on": null,
-                "loose_match": true
-            },
-            {
-                "path": "product",
-                "compare": "min-len",
-                "match_on": 1,
-                "loose_match": true
-            }
-        ],
-        "fields": [
-            {
-                "id": "shodan.id",
-                "text": "Shodan - ID",
-                "path": "_shodan.id",
-                "condition": "_shodan.id"
-            },
-            {
-                "id": "product",
-                "text": "Product",
-                "path": "product",
-                "condition": "product:exists,product:min-len=1"
-            },
-            {
-                "id": "http.response.header.host",
-                "text": "'Host' Header",
-                "path": "http.host",
-                "condition": "_shodan:!exists,http.host:exists,http.host:min-len=1"
-            }
-        ]
+  {
+    "id": "shodan-http-products",
+    "name": "shodan http products",
+    "description": "match web products from shodan api host",
+    "owner": {
+      "researcher": "John Doe",
+      "company": "Company X"
+    },
+    "enable_on": "_shodan,_shodan.module:begins=http",
+    "conditions": [
+      {
+        "path": "_shodan",
+        "compare": "!exists",
+        "match_on": null,
+        "loose_match": true
+      },
+      {
+        "path": null,
+        "compare": null,
+        "match_on": null,
+        "loose_match": true,
+        "_extended": "_shodan,product,product:min-len=1"
+      }
+    ],
+    "fields": [
+      {
+        "id": "shodan.id",
+        "text": "\tShodan - ID",
+        "path": "_shodan.id",
+        "condition": "_shodan.id"
+      },
+      {
+        "id": "product",
+        "text": "\tProduct",
+        "path": "product",
+        "condition": "product:exists,product:min-len=1"
+      },
+      {
+        "id": "http.host.header",
+        "text": "\t'Host' Header",
+        "path": "http.host",
+        "condition": "_shodan,http.host:exists,http.host:min-len=1"
+      }
+    ],
+    "data": {
+      "template": [
+        "* Match on Rule: [rule:name] (id: [rule:id]) # by: [rule:owner.researcher] / [rule:owner.company]\n",
+        "\t// [rule:description]\n",
+        "\tShodan - ID: [field:shodan.id], product: [field:product]\n",
+        "\tproduct: [field:product], 'host' header: [field:http.host.header]"
+      ]
     }
+  }
 ]
