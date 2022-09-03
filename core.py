@@ -209,7 +209,7 @@ class JsonRuleEngine:
 			if condition.is_negate:
 				return not path_exists
 			return path_exists
-		if condition.COMPARE_IS_NULL == condition.compare:
+		if condition.COMPARE_IS_NULL == condition.compare or condition.COMPARE_NULL == condition.compare:
 			if condition.is_negate:
 				return path_value is not None
 			return path_value is None
@@ -623,6 +623,7 @@ class JsonCondition:
 	COMPARE_HAS_VALUE = "has-value"
 	COMPARE_NO_VALUE = "no-value"
 	COMPARE_IS_NULL = "is-null"
+	COMPARE_NULL = "null"
 	# // simple complex conditions
 	COMPARE_EQUALS = "equals"
 	COMPARE_VALUE = "value" # same as COMPARE_EQUALS
@@ -756,7 +757,7 @@ class JsonCondition:
 			return True
 		if self.COMPARE_NO_VALUE == self.compare:
 			return True
-		if self.COMPARE_IS_NULL == self.compare:
+		if self.COMPARE_IS_NULL == self.compare or self.COMPARE_NULL == self.compare:
 			return True
 		return False
 	@property
@@ -929,6 +930,9 @@ def format_rule_data_from_fields(rule_engine, rule, fields):
 			format_definition = format_definition.replace(rule_field[0], rule_field[1])
 	for field in fields:
 		if field.value is not None:
+			field_value_type = type(field.value).__name__
+			if "bool" == field_value_type or "int" == field_value_type:
+				field._value = str(field.value).lower()
 			format_pattern = "[field:%s]" % field.id
 			if format_pattern in format_definition:
 				format_definition = format_definition.replace(format_pattern, field.value)
