@@ -58,8 +58,6 @@ class JsonRuleEngine:
 		return self._rules
 
 	@staticmethod
-	
-	@staticmethod
 	def json_path_exists(json_dict, path):
 		path_exists, path_value = get_json_path(json_dict, path)
 		return path_exists
@@ -163,6 +161,9 @@ class JsonRuleEngine:
 				return False
 		return True
 	def match_on_condition(self, json_dict, condition):
+		if condition.is_extended:
+			return self.match_on_extended_conditions(json_dict, condition)
+
 		if self._debug:
 			if condition.derived_from_simple:
 				if self._debug:
@@ -193,6 +194,14 @@ class JsonRuleEngine:
 			if self._debug:
 				print("[!] match_on_condition() : condition '%s' (type: unknown) 'NOT OK'" % condition.as_string())
 		return False
+	def match_on_extended_conditions(self, json_dict, condition):
+		if not condition.is_extended:
+			return False
+		#print("match_on_extended_conditions() : definitions '%s'" % condition.extended_definitions)
+		for extended_condition in condition.extended_conditions:
+			if not self.match_on_condition(json_dict, extended_condition):
+				return False
+		return True
 
 	def match_on_simple_condition(self, json_dict, condition):
 		path_exists, path_value = get_json_path(json_dict, condition.path)
@@ -503,17 +512,26 @@ class JsonRule:
 		self._definition = json_rule
 		self._conditions = []
 		self._fields = []
+		self._data_template = None
+		self._data = None
 		self._init_conditions()
 		self._init_fields()
+		self._init_data_template()
 
 	def _init_conditions(self):
 		if "conditions" in self._definition:
 			for json_condition in self._definition["conditions"]:
-				self._conditions.append(JsonCondition(json_condition))
+				if "_definition" in json_condition:
+					pass
+				else:
+					self._conditions.append(JsonCondition(json_condition))
 	def _init_fields(self):
 		fields = self._definition["fields"]
 		for field in fields:
 			self._fields.append(ConditionalField(field))
+	def _init_data_template(self):
+		template = self._definition["data"]["template"]
+		self._data_template = ''.join(template)
 
 	@staticmethod
 	def template_definition():
@@ -532,6 +550,11 @@ class JsonRule:
 		return json.loads(definition_json_string)
 
 	@property
+	def id(self):
+		if "id" in self._definition:
+			return self._definition["id"]
+		return None
+	@property
 	def name(self):
 		if "name" in self._definition:
 			return self._definition["name"]
@@ -545,6 +568,16 @@ class JsonRule:
 	def owner(self):
 		if "owner" in self._definition:
 			return self._definition["owner"]
+		return ""
+	@property
+	def owner_researcher(self):
+		if len(self.owner) > 0:
+			return self.owner["researcher"]
+		return ""
+	@property
+	def owner_company(self):
+		if len(self.owner) > 0:
+			return self.owner["company"]
 		return ""
 	@property
 	def conditions(self):
@@ -693,6 +726,24 @@ class JsonCondition:
 		if name in self._definition:
 			return self._definition[name]
 		return None
+	@property
+	def is_extended(self):
+		if "_extended" in self._definition:
+			return True
+		return False
+	@property
+	def extended_conditions(self):
+		conditions = []
+		if self.is_extended:
+			for condition_definition in self._definition["_extended"].split(","):
+				conditions.append(JsonCondition.simple_definition(condition_definition.strip()))
+		return conditions
+	@property
+	def extended_definitions(self):
+		if self.is_extended:
+			return self._definition["_extended"]
+		return None
+	
 
 	@property
 	def is_simple_compare(self):
@@ -765,16 +816,16 @@ class JsonCondition:
 		return True
 class ConditionalField:
 	def __init__(self, json_field):
-		self._json = json_field
-		self._id = self._json["id"]
-		self._text = self._json["text"]
-		self._path = self._json["path"]
+		self._definition = json_field
+		self._id = self._definition["id"]
+		self._text = self._definition["text"]
+		self._path = self._definition["path"]
 		self._value = None
 		self._conditions = []
 		self._init_condition()
 
 	def _init_condition(self):
-		for condition_definition in self._json["condition"].split(","):
+		for condition_definition in self._definition["condition"].split(","):
 			self._conditions.append(JsonCondition.simple_definition(condition_definition))
 
 	def as_conditions(self):
@@ -788,6 +839,12 @@ class ConditionalField:
 		if path_exists is not None:
 			return path_value
 		return None
+	def init_value(self, json_data):
+		path_exists, path_value = get_json_path(json_data, self.path)
+		if path_exists is not None:
+			self._value = path_value
+			return True
+		return False
 
 	@property
 	def id(self):
@@ -799,6 +856,9 @@ class ConditionalField:
 	def path(self):
 		return self._path
 	@property
+	def value(self):
+		return self._value
+	@property
 	def conditions(self):
 		return self._conditions
 
@@ -806,71 +866,13 @@ class ConditionalField:
 	def has_conditions(self):
 		if len(self.conditions) > 0:
 			return True
-		"""
-"id": "shodan.id",
-"text": "Shodan - ID:",
-"path": "http.title",
-"condition": "http.title:exists,http.title:min-len=1"
-		"""
 
 def get_json_from_file(file_path):
 	if os.path.isfile(file_path):
 		with open(file_path, 'r') as f:
 			return json.load(f)
 	return None
-def get_dummy_json_rules():
-	json_string = """
-[
-  {
-    "name": "shodan-http-module",
-    "description": "TEST - match on http module for shodan host",
-    "owner": {
-      "researcher": "Kim Bokholm",
-      "company": "NTT Security"
-    },
-    "enable_on": "_shodan.module:begins=http,_shodan.id=99c2250d-6b98-408a-adaf-01be8a90bc3e|f69d25f2-fc61-445a-93ce-3f0b1e9d3232",
-    "conditions": [
-      {
-        "path": "_shodan.module",
-        "compare": "exists",
-        "match_on": null,
-        "loose_match": true
-      },
-      {
-        "path": "_shodan.module",
-        "compare": "equals",
-        "match_on": "http|https",
-        "loose_match": true
-      }
-    ],
-    "fields": [
-      {
-        "id": "shodan.id",
-        "text": "Shodan - ID",
-        "path": "_shodan.id",
-        "condition": "_shodan.id"
-      },
-      {
-        "id": "http.page.title",
-        "text": "Page Title",
-        "path": "http.title",
-        "condition": "http.title:exists,http.title:min-len=1"
-      },
-      {
-        "id": "http.response.header.host",
-        "text": "'Host' Header",
-        "path": "http.host",
-        "condition": "http.host:exists,http.host:min-len=1"
-      }
-    ]
-  }
-]
-"""
-#"match_on": "http|https"
-#"enable_on": "_shodan:exists=module",
-#"enable_on": "_shodan:exists=module,_shodan.module:equals=http|https",
-#"enable_on": "_shodan:exists=module,_shodan.module:begins=http",
-	return json.loads(json_string)
+
 def run_rules_on_json(rule_engine, json_data):
 	for rule in rule_engine.rules:
 		#print(json_prettify(rule._definition))
@@ -879,30 +881,49 @@ def run_rules_on_json(rule_engine, json_data):
 		if not rule_engine.match_on_rule(json_data, rule):
 			continue
 
-		print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
+		#print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
 		filler = "*" * int(((39 * 2 - len("rule definition")-1) / 2))
-		print("%s rule definition %s" % (filler, filler))
+		#print("%s rule definition %s" % (filler, filler))
 		#print(json_prettify(rule._definition))
-		print("%s" % ("*" * 39 * 2))
+		#print("%s" % ("*" * 39 * 2))
 
-		hit_on_fields = []
+		fields_with_match = []
 		for field in rule.fields:
 			if rule_engine._debug:
 				print("")
-				print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
+				#print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
 			if rule_engine.match_on_field(json_data, field):
-				hit_on_fields.append(field)
-				#print("field id: %s, path: %s, text: '%s'" % (field.id, field.path, field.text))
-				#found_match = True
 				if rule_engine._debug:
 					print("[*] Field '%s' - match 'OK'" % field.id)
-				field_value = field.get_json(json_data)
-				if field_value is not None:
-					print("%s: %s" % (field.text, field_value))
-				#print(field_value)
+				if field.init_value(json_data):
+					fields_with_match.append(field)
 			else:
 				if rule_engine._debug:
 					print("[*] Skipping Field - '%s' with condition '%s'!" % (field.id, field.as_conditions()))
+		if len(fields_with_match) > 0:
+			rule_data = format_rule_data_from_fields(rule_engine, rule, fields_with_match)
+			#if rule_data != rule._data_template:
+			#print("* Match on Rule: %s (id: %s, by: %s / %s)\n\t// %s" % (rule.name, rule.id, rule.owner["researcher"], rule.owner["company"], rule.description))
+			print(rule_data)
+def format_rule_data_from_fields(rule_engine, rule, fields):
+	format_definition = rule._data_template
+	rule_fields = []
+	rule_field_list = "id,name,description,owner.researcher,owner.company".split(",")
+	for path in rule_field_list:
+		path_exists, path_value = get_json_path(rule._definition, path)
+		if path_exists:
+			rule_fields.append(["[rule:%s]" % path, path_value])
+	
+	for rule_field in rule_fields:
+		if rule_field[0] in format_definition:
+			format_definition = format_definition.replace(rule_field[0], rule_field[1])
+	for field in fields:
+		if field.value is not None:
+			format_pattern = "[field:%s]" % field.id
+			if format_pattern in format_definition:
+				format_definition = format_definition.replace(format_pattern, field.value)
+	return format_definition
+
 def run_rules_on_json_file(rule_engine, json_file):
 	if not os.path.isfile(json_file):
 		print("ERROR - Missing 'json' file '%s'" % json_file)
@@ -941,8 +962,8 @@ def get_json_data(file_path):
 		return json_data
 	return None
 def main(args):
-	root_dir = "/home/bob104/tools/shodan-cli"
-	#root_dir = "/home/angeld/Workspace/coding/shodan-py"
+	#root_dir = "/home/bob104/tools/shodan-cli"
+	root_dir = "/home/angeld/Workspace/coding/shodan-py"
 	data_dir = os.path.join(root_dir, "shodan-data")
 	#data_dir = "/home/angeld/Workspace/coding/shodan-py/shodan-data"
 	target = "91.195.240.94"
@@ -970,7 +991,6 @@ def main(args):
 		return
 
 	json_data = get_json_from_file(json_file)
-	#json_rules = get_dummy_json_rules()
 	json_rules = get_json_from_file(rules_file)
 
 	engine = JsonRuleEngine(json_rules)
