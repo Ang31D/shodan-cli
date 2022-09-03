@@ -13,7 +13,8 @@
         "path": "_shodan",
         "compare": "!exists",
         "match_on": null,
-        "loose_match": true
+        "loose_match": true,
+        "_extended": null
       },
       {
         "path": null,
@@ -26,19 +27,16 @@
     "fields": [
       {
         "id": "shodan.id",
-        "text": "\tShodan - ID",
         "path": "_shodan.id",
         "condition": "_shodan.id"
       },
       {
         "id": "product",
-        "text": "\tProduct",
         "path": "product",
         "condition": "product:exists,product:min-len=1"
       },
       {
         "id": "http.host.header",
-        "text": "\t'Host' Header",
         "path": "http.host",
         "condition": "_shodan,http.host:exists,http.host:min-len=1"
       }
