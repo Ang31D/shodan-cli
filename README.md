@@ -6,7 +6,7 @@ The python script `shodan-cli.py` utilizes the shodan api ([https://shodan.readt
 We can choose to fetch all historical data for the host or just the latest scan.
 By default it will From there we, filter and show host services information.
 
-The python script `core.py` is a poc to detect content in json files based on rule condition(s).
+The python script `core.py` is a poc to detect content in json files based on rule condition(s) and to show templated output based on matched conditions.
 
 Sample hosts from shodan `91.195.240.94` , `198.98.62.253`
 
