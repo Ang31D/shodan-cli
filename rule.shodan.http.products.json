@@ -31,6 +31,11 @@
         "condition": "_shodan.id"
       },
       {
+        "id": "shodan.crawler.ptr",
+        "path": "_shodan.ptr",
+        "condition": "_shodan,_shodan.ptr"
+      },
+      {
         "id": "product",
         "path": "product",
         "condition": "product:exists,product:min-len=1"
@@ -39,14 +44,35 @@
         "id": "http.host.header",
         "path": "http.host",
         "condition": "_shodan,http.host:exists,http.host:min-len=1"
+      },
+      {
+        "id": "http.page.title",
+        "path": "http.title",
+        "condition": "http.title,http.title:min-len=1"
+      },
+      {
+        "id": "http.headers_hash",
+        "path": "http.headers_hash",
+        "condition": "_shodan,http.headers_hash:!null"
+      },
+      {
+        "id": "http.robots_hash",
+        "path": "http.robots_hash",
+        "condition": "_shodan,http.robots_hash:!null"
+      },
+      {
+        "id": "http.html_hash",
+        "path": "http.html_hash",
+        "condition": "_shodan,http.html_hash:!null"
       }
     ],
     "data": {
       "template": [
         "* Match on Rule: [rule:name] (id: [rule:id]) # by: [rule:owner.researcher] / [rule:owner.company]\n",
         "\t// [rule:description]\n",
-        "\tShodan - ID: [field:shodan.id], product: [field:product]\n",
-        "\tproduct: [field:product], 'host' header: [field:http.host.header]"
+        "\tShodan - ID: [field:shodan.id], crawler has PTR entry: [field:shodan.crawler.ptr]\n",
+        "\tproduct: [field:product], 'host' header: [field:http.host.header], Page Title: [field:http.page.title]\n",
+        "\theaders_hash: [field:http.headers_hash], robots_hash: [field:http.robots_hash], html_hash: [field:http.html_hash]"
       ]
     }
   }
