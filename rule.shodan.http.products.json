@@ -22,12 +22,18 @@
         "match_on": null,
         "loose_match": true,
         "_extended": "product,product:min-len=1"
+      },
+      {
+        "path": null,
+        "compare": null,
+        "match_on": null,
+        "loose_match": true,
+        "_extended": "port:equals=50050"
       }
     ],
     "fields": [
       {
         "id": "shodan.id",
-        "text": "\tShodan - ID",
         "path": "_shodan.id",
         "condition": "_shodan.id"
       },
@@ -53,39 +59,73 @@
       },
       {
         "id": "product",
-        "text": "\tProduct",
         "path": "product",
         "condition": "product:exists,product:min-len=1"
       },
       {
-        "id": "http.server.header",
-        "text": "\tProduct",
+        "id": "product.version",
+        "path": "version",
+        "condition": "version:exists,version:min-len=1"
+      },
+      {
+        "id": "http.product.apache",
+        "path": "product",
+        "condition": "product:contains=apache"
+      },
+      {
+        "id": "http.header.server",
         "path": "http.server",
-        "condition": "http.server,http.server:min-len=1"
+        "condition": "http.server:exists,http.server:min-len=1"
       },
       {
-        "id": "http.page.title",
-        "text": "Page Title",
-        "path": "http.title",
-        "condition": "http.title:exists,http.title:min-len=1"
-      },
-      {
-        "id": "http.host.header",
-        "text": "\t'Host' Header",
+        "id": "http.header.host",
         "path": "http.host",
         "condition": "_shodan,http.host:exists,http.host:min-len=1"
       },
       {
-        "id": "product.cobalt_strike",
-        "text": "\t'Host' Header",
-        "path": "product",
-        "condition": "product=Cobalt Strike Beacon"
+        "id": "http.page.title",
+        "path": "http.title",
+        "condition": "http.title:exists,http.title:min-len=1"
       },
       {
-        "id": "cobalt_strike.http-get.uri",
-        "text": "\t'Host' Header",
-        "path": "cobalt_strike_beacon.x86.http-get.uri",
-        "condition": "cobalt_strike_beacon.x86.http-get.uri"
+        "id": "product.cobalt_strike",
+        "path": "product",
+        "condition": "product:contains=Cobalt Strike Beacon"
+      },
+      {
+        "id": "cobalt_strike.config.watermark",
+        "path": "cobalt_strike_beacon.x86.watermark",
+        "condition": "cobalt_strike_beacon.x86.watermark:exists"
+      },
+      {
+        "id": "cobalt_strike.config.http-get.uri",
+        "path": "cobalt_strike_beacon|x86|http-get.uri",
+        "condition": "cobalt_strike_beacon:exists"
+      },
+      {
+        "id": "cobalt_strike.config.http-post.uri",
+        "path": "cobalt_strike_beacon|x86|http-post.uri",
+        "condition": "cobalt_strike_beacon:exists"
+      },
+      {
+        "id": "cobalt_strike.config.useragent_header",
+        "path": "cobalt_strike_beacon|x86|useragent_header",
+        "condition": "cobalt_strike_beacon|x86|useragent_header:exists"
+      },
+      {
+        "id": "cobalt_strike.config.http-get.client",
+        "path": "cobalt_strike_beacon|x86|http-get.client",
+        "condition": "cobalt_strike_beacon|x86|http-get.client:exists"
+      },
+      {
+        "id": "tcp.port.443",
+        "path": "port",
+        "condition": "transport=tcp,port=443"
+      },
+      {
+        "id": "cobalt_strike.team_server.default_port.50050",
+        "path": "port",
+        "condition": "product:!exists,port:equals=50050"
       }
     ],
     "templates": [
@@ -94,39 +134,81 @@
         "template_dependency": "",
         "field_requirement": "host.ip,host.service.port,host.port.protocol,service.module,shodan.id",
         "data": [
-          "[field:host.ip]\t\t[field:host.service.port]/[field:host.port.protocol]\t\tHTTP-Service ([field:service.module]) # Shodan - ID: [field:shodan.id]\n"
+          "[ip_str]\t\t[port]/[transport]\t\tHTTP-Service ([_shodan.module]) # Shodan - ID: [_shodan.id]\n"
         ]
       },
       {
-        "id": "http.product",
+        "id": "product.apache",
         "template_dependency": "rule.header",
-        "field_requirement": "product,http.server.header",
+        "field_requirement": "product,product:min-len=1,http.product.apache",
         "data": [
-          "\tproduct: [field:product], 'server' header: [field:http.server.header]"
+          "\t* [field:http.product.apache]"
         ]
       },
       {
-        "id": "product.server.header",
-        "template_dependency": "rule.header",
-        "field_requirement": "host.ip,host.service.port'",
+        "id": "apache.version",
+        "template_dependency": "product.apache",
+        "field_requirement": "product.version",
         "data": [
-          "\tproduct: [field:product], 'server' header: [field:http.server.header]"
+          " '[field:product.version]'"
         ]
       },
       {
-        "id": "product.host.header",
-        "template_dependency": "rule.header",
-        "field_requirement": "host.ip,host.service.port'",
+        "id": "apache-http.server-header",
+        "template_dependency": "product.apache",
+        "field_requirement": "http.header.server",
         "data": [
-          "\tproduct: [field:product], 'host' header: [field:http.host.header]"
+          " ([field:http.header.server])"
+        ]
+      },
+      {
+        "id": "apache-http.host-header",
+        "template_dependency": "product.apache",
+        "field_requirement": "http.header.host",
+        "data": [
+          ", 'host' header: [field:http.header.host]"
+        ]
+      },
+      {
+        "id": "http.page.title",
+        "template_dependency": "product.apache",
+        "field_requirement": "http.page.title",
+        "data": [
+          "\n\t  - Page Title: '[field:http.page.title]'"
         ]
       },
       {
         "id": "product.cobalt_strike",
         "template_dependency": "rule.header",
-        "field_requirement": "product.cobalt_strike'",
+        "field_requirement": "product.cobalt_strike",
         "data": [
-          "\tproduct: [field:product], http-get.uri: '[cobalt_strike.http-get.uri]'"
+          "\n\t* [field:product]"
+        ]
+      },
+      {
+        "id": "cobalt_strike-config",
+        "template_dependency": "product.cobalt_strike",
+        "field_requirement": "",
+        "data": [
+          " # config",
+          "\n\t    - watermark \t- x86: '[field:cobalt_strike.config.watermark]'",
+          "\n\t                \t  x64: '[cobalt_strike_beacon.x64.watermark]'",
+          "\n\t    - http-get.uri \t- x86: '[field:cobalt_strike.config.http-get.uri]'",
+          "\n\t                   \t  x64: '[cobalt_strike_beacon|x64|http-get.uri]'",
+          "\n\t    - http-post.uri\t- x86: '[field:cobalt_strike.config.http-post.uri]'",
+          "\n\t                   \t  x64: '[cobalt_strike_beacon|x64|http-post.uri]'",
+          "\n\t    - user-agent \t- x86: '[field:cobalt_strike.config.useragent_header]'",
+          "\n\t                 \t  x64: '[cobalt_strike_beacon|x64|useragent_header]'",
+          "\n\t    - http-get.client \t- x86: '[field:cobalt_strike.config.http-get.client]'",
+          "\n\t                      \t  x64: '[cobalt_strike_beacon|x64|http-get.client]'"
+        ]
+      },
+      {
+        "id": "product.cobalt_strike.team_server",
+        "template_dependency": "rule.header",
+        "field_requirement": "cobalt_strike.team_server.default_port.50050",
+        "data": [
+          "\n\t* Potential Cobalt Strike - Team Server on port '[field:cobalt_strike.team_server.default_port.50050]'"
         ]
       }
     ]
