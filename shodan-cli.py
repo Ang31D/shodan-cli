@@ -91,6 +91,21 @@ git log --since="2 weeks ago"
 # refers to master@{1.hour.ago} if on the branch master.
 """
 
+def json_prettify(json_data):
+	json_type = type(json_data).__name__
+	if "dict" == json_type:
+		return json.dumps(json_data, indent=4)
+	if "str" == json_type:
+		return json.dumps(json.loads(json_data), indent=4)
+	return json_data
+def json_minify(json_data):
+	json_type = type(json_data).__name__
+	if "dict" == json_type:
+		return json.dumps(json_data)
+	if "str" == json_type:
+		return json.dumps(json.loads(json_data))
+	return json_data
+
 class ShodanAPI:
 	def __init__(self):
 		self._init = False
@@ -983,7 +998,7 @@ def show_json_path_as_field(shodan, service):
 
 			path_exists, path_value = get_json_path(service._json, path)
 			path_type = type(path_value).__name__
-			#print("json-path - path: %s, exists: %s, type: %s" % (path_type, path_exists, path))
+			print("json-path - path: %s, exists: %s, type: %s" % (path_type, path_exists, path))
 
 			if path_exists:
 				found_path = True
@@ -992,6 +1007,9 @@ def show_json_path_as_field(shodan, service):
 				field_name = path
 				if field_name in path_to_field:
 					field_name = path_to_field[path]
+				
+				if "dict" == path_type:
+					path_value = json_minify(path_value)
 				out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
 		#print("%s" % ("*" * 39 * 2))
