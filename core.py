@@ -173,8 +173,6 @@ class JsonRuleEngine:
 					path_value = "true"
 				else:
 					path_value = "false"
-				#path_type = str(path_value).lower()
-		#print("path(%s).exists: %s, type: %s, match_on: %s, value: '%s'" % (condition.path, str(path_exists).lower(), path_type, match_on_value, path_value))
 
 		if not path_exists:
 			return False
@@ -205,7 +203,7 @@ class JsonRuleEngine:
 					if condition.is_negate:
 						return True
 					return False
-			
+
 			if path_type == "int" and match_on_type == "str" and match_on_value.isnumeric():
 				if path_value == int(match_on_value):
 					if condition.is_negate:
@@ -457,14 +455,11 @@ class ReportTemplate:
 			return True
 		for field_id in self.field_requirement.split(","):
 			if not self._parent.field_exists(field_id.strip()):
-				#print("   ! field_requirement() : missing field '%s'" % field_id)
 				return False
 
 			field = self._parent.get_field(field_id.strip())
 			if field.value is None:
-				#print("   - field_requirement() : '%s'" % field.id)
 				return False
-			#print("   + field_requirement() : '%s' = '%s'" % (field.id, field.value))
 		return True
 
 	@property
@@ -528,6 +523,8 @@ class JsonRule:
 					pass
 				else:
 					self._conditions.append(JsonCondition(self, json_condition))
+	def _reset_fields(self):
+		self._init_fields()
 	def _init_fields(self):
 		self._fields = OrderedDict()
 		fields = self._definition["fields"]
@@ -649,6 +646,12 @@ class JsonCondition:
 	COMPARE_MIN_LEN = "min-len"
 	COMPARE_MAX_LEN = "max-len"
 	COMPARE_REGEX = "regex"
+	# // add support for gt (>), gte (>=), lt (<), lte (>=), eq (==)
+	COMPARE_NUM_GREATER_THEN = "gt"
+	COMPARE_NUM_GREATER_THEN_EQUAL = "gte"
+	COMPARE_NUM_LESS_THEN = "lt"
+	COMPARE_NUM_LESS_THEN_EQUAL = "lte"
+	COMPARE_NUM_EQUAL = "eq"
 	
 	def __init__(self, parent, json_condition):
 		self._parent = parent # JsonRule
@@ -921,6 +924,7 @@ def get_json_from_file(file_path):
 
 def run_rules_on_json_data(rule_engine, json_data):
 	for rule in rule_engine.rules:
+		#rule._reset_fields()
 		if run_rule_on_json(rule_engine, rule, json_data):
 			#print("   //// Building report ////////")
 			rule_report = build_rule_report(rule_engine, rule, json_data)
@@ -992,32 +996,23 @@ def run_rule_on_json(rule_engine, rule, json_data):
 def build_rule_report(rule_engine, rule, json_data):
 	report_template = get_rule_report_template(rule_engine, rule, json_data)
 	if report_template is None:
-		#print("[!] build_rule_report() : no template evaluated for rule '%s' (id: %s)" % (rule.name, rule.id))
 		return None
 
 	return format_rule_report_template(rule, report_template, json_data)
 def get_rule_report_template(rule_engine, rule, json_data):
 	evaluated_rule_fields = get_evaluated_rule_fields(rule_engine, rule, json_data)
 	if len(evaluated_rule_fields) == 0:
-		#print("[DEBUG] get_rule_report_template() : Rule fields evaluation not 'Fullfilled'")
 		return None
 
 	report_template = ''
 	evaluated_template_data_chunks = OrderedDict()
-	#for field in evaluated_rule_fields:
-	#	print("   # evaluated_field.id: %s\t - value: '%s'" % (field.id, field.value))
 	for template_chunk in rule._templates:
-		#print("   // Template - id: %s" % (template_chunk.id))
 		if not template_chunk.check_requirements():
-			#print("   [-] 'NOT Fullfilled' - template.id: %s - Template requirements - rule '%s' (id: %s)" % (template_chunk.id, rule.name, rule.id))
 			continue
-		#print("   [+] 'Fullfilled' - template.id: %s - Template requirements - rule '%s' (id: %s)" % (template_chunk.id, rule.name, rule.id))
 		evaluated_template_data_chunks[template_chunk.id] = template_chunk
-		#print("   #### template_chunk '%s'" % template_chunk._definition)
 	# // build output from evaluated template data chunks
 	for template_chunk_id in evaluated_template_data_chunks:
 		template_chunk = evaluated_template_data_chunks[template_chunk_id]
-		#print("  - get_rule_report_template() :  template.id: %s, \n\tdata '%s'" % (template_chunk.id, template_chunk.data))
 		if not template_chunk.has_dependencies:
 			report_template = "%s%s" % (report_template, ''.join(template_chunk.data))
 		else:
@@ -1025,7 +1020,6 @@ def get_rule_report_template(rule_engine, rule, json_data):
 			for dependent_template in template_chunk.template_dependency.split(","):
 				if dependent_template not in evaluated_template_data_chunks:
 					dependent_templates_evaluated = False
-					#print("  [!!!!] get_rule_report_template() : template.id: %s - dependent template (%s) not evaluated" % (template_chunk.id, dependent_template))
 					break
 			if dependent_templates_evaluated:
 				report_template = "%s%s" % (report_template, ''.join(template_chunk.data))
