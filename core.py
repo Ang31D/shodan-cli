@@ -1,5 +1,6 @@
 import json
 import os
+from collections import OrderedDict
 import re
 
 def json_prettify(json_data):
@@ -19,8 +20,6 @@ def json_minify(json_data):
 
 def get_json_path(json_dict, path):
 	json_data = json_dict
-	# // TODO:
-	# // check that json_dict is of 'dict' type
 	field_type = type(json_data).__name__
 
 	if field_type != 'dict':
@@ -41,7 +40,14 @@ def get_json_path(json_dict, path):
 
 		if index_of_last_field == i:
 			return True, json_data
+
+		#if field_type != 'dict':
+		#	return False, None
 	return False, None
+
+def json_path_exists(json_dict, path):
+	path_exists, path_value = get_json_path(json_dict, path)
+	return path_exists
 
 class JsonRuleEngine:
 	def __init__(self, json_data):
@@ -51,112 +57,16 @@ class JsonRuleEngine:
 		self._init_rules()
 
 	def _init_rules(self):
+		self._rules = []
 		for json_rule in self._json:
-			self._rules.append(JsonRule(json_rule))
+			self._rules.append(JsonRule(self, json_rule))
 	@property
 	def rules(self):
 		return self._rules
 
-	@staticmethod
-	def json_path_exists(json_dict, path):
-		path_exists, path_value = get_json_path(json_dict, path)
-		return path_exists
-
-	def match_on_rule(self, json_dict, rule):
-		rule_definition = rule._definition
-		if self._debug:
-			print("[*] Checking requirements for rule '%s'" % rule.name)
-		if rule.has_requirements:
-			if not self.match_on_rule_requirements(json_dict, rule):
-				if self._debug:
-					print("[*] Skipping Rule - '%s'!" % rule.name)
-				return False
-		if self._debug:
-			print("[*] Rule '%s' - requirements 'OK'" % rule.name)
-		
-		if self._debug:
-			print("[*] Checking conditions for rule '%s'" % rule.name)
-		if rule.has_conditions:
-			if not self.match_on_rule_conditions(json_dict, rule):
-				if self._debug:
-					print("[!] Rule '%s' - conditions 'NOT OK'" % rule.name)
-				return False
-		if self._debug:
-			print("[*] Rule '%s' - conditions 'OK'" % rule.name)
-
-		return True
-	def match_on_rule_requirements(self, json_dict, rule):
-		if self._debug:
-			print("[*] Rule '%s' - requirement definition '%s'" % (rule.name, rule.enable_on))
-		if not rule.has_requirements:
-			if self._debug:
-				print("[*] Rule '%s' requirements - 'NONE'" % rule.name)
-			return True
-		
-		for enable_on_definition in rule.requirement_definitions:
-			condition = JsonCondition.simple_definition(enable_on_definition)
-			if self._debug:
-				print("[*] JsonCondition.simple_definition: \n%s" % json_prettify(condition._definition))
-			else:
-				if self._debug:
-					print("[*] JsonCondition.simple_definition: %s" % json_minify(condition._definition))
-
-			if not self.match_on_condition(json_dict, condition):
-				if self._debug:
-					print("[!] Rule '%s' - condition '%s' - 'NOT FULLFILLED'" % (rule.name, enable_on_definition))
-				return False
-		return True
-	def match_on_rule_conditions(self, json_dict, rule):
-		if self._debug:
-			print("[*] Rule '%s' - conditions definition '%s'" % (rule.name, rule.as_conditions()))
-		for rule_condition in rule.conditions:
-			if self.match_on_condition(json_dict, rule_condition):
-				if self._debug:
-					print("[*] match_on_rule_conditions() : rule conditions - 'OK' - %s" % rule_condition.as_string())
-				return True
-		if self._debug:
-			print("[!] match_on_rule_conditions() : rule condition - 'NOT OK' - %s" % rule_condition.as_string())
-		return False
-	def match_on_rule_conditions_old(self, json_dict, rule):
-		if self._debug:
-			print("[*] Rule '%s' - conditions definition '%s'" % (rule.name, rule.as_conditions()))
-		for rule_condition in rule.conditions:
-			if not self.match_on_condition(json_dict, rule_condition):
-				if self._debug:
-					print("[!] match_on_rule_conditions() : rule condition - 'NOT OK' - %s" % rule_condition.as_string())
-				return False
-		if self._debug:
-			print("[*] match_on_rule_conditions() : rule conditions - 'OK' - %s" % rule_condition.as_string())
-		return True
-
-	def match_on_field(self, json_dict, field):
-		if self._debug:
-			print("[*] Checking conditions for field '%s'" % field.id)
-		if field.has_conditions:
-			if not self.match_on_field_conditions(json_dict, field):
-				if self._debug:
-					print("[!] Field '%s' - conditions 'NOT OK'" % field.id)
-				return False
-		if self._debug:
-			print("[*] Field '%s' - conditions 'OK'" % field.id)
-		return True
-	def match_on_field_conditions(self, json_dict, field):
-		if self._debug:
-			print("[*] Field '%s' - conditions definition '%s'" % (field.id, field.as_conditions()))
-		for field_condition in field.conditions:
-			if not self.match_on_condition(json_dict, field_condition):
-				if self._debug:
-					print("[!] match_on_field_conditions() : field condition - 'NOT OK' - %s" % field_condition.as_string())
-				return False
-		if self._debug:
-			print("[*] match_on_field_conditions() : field conditions - 'OK' - %s" % field_condition.as_string())
-		return True
-
 	def match_on_conditions(self, json_dict, conditions):
 		for condition in conditions:
 			if not self.match_on_condition(json_dict, condition):
-				if self._debug:
-					print("[!] match_on_conditions() : condition 'NOT OK' - %s" % condition.as_string())
 				return False
 		return True
 	def match_on_condition(self, json_dict, condition):
@@ -172,31 +82,17 @@ class JsonRuleEngine:
 					print("[*] match_on_condition() : checking condition '%s' (loose match: %s)" % (condition.as_string(), str(condition.loose_match).lower()))
 
 		if not condition.definition_is_valid:
-			if self._debug:
-				print("[!] match_on_condition() : invalid definition - condition (%s)" % condition.as_string())
 			return False
 		if condition.is_simple_compare:
 			if self.match_on_simple_condition(json_dict, condition):
-				if self._debug:
-					print("[*] match_on_condition() : condition '%s' (type: simple) 'OK'" % condition.as_string())
 				return True
-			if self._debug:
-				print("[!] match_on_condition() : condition '%s' (type: simple) 'NOT OK'" % condition.as_string())
 		elif condition.is_complex_compare:
 			if self.match_on_complex_condition(json_dict, condition):
-				if self._debug:
-					print("[*] match_on_condition() : condition '%s' (type: complex) 'OK'" % condition.as_string())
 				return True
-			if self._debug:
-				print("[!] match_on_condition() : condition '%s' (type: complex) 'NOT OK'" % condition.as_string())
-		else:
-			if self._debug:
-				print("[!] match_on_condition() : condition '%s' (type: unknown) 'NOT OK'" % condition.as_string())
 		return False
 	def match_on_extended_conditions(self, json_dict, condition):
 		if not condition.is_extended:
 			return False
-		#print("match_on_extended_conditions() : definitions '%s'" % condition.extended_definitions)
 		for extended_condition in condition.extended_conditions:
 			if not self.match_on_condition(json_dict, extended_condition):
 				return False
@@ -251,16 +147,14 @@ class JsonRuleEngine:
 		return False
 	def match_on_complex_condition(self, json_dict, condition):
 		if not condition.has_multi_values:
-			if not self.match_on_complex_condition_value(json_dict, condition, condition.match_on):
-				return False
-			return True
-		else:
-			for match_on_value in condition.match_on:
-				if self.match_on_complex_condition_value(json_dict, condition, match_on_value):
-					if self._debug:
-						print("[*] match_on_complex_condition() : condition match '%s' 'OK' - %s" % (match_on_value, condition.as_string()))
-					return True
-			return False
+			return self.match_on_complex_condition_value(json_dict, condition, condition.match_on)
+		
+		for match_on_value in condition.match_on:
+			if self.match_on_complex_condition_value(json_dict, condition, match_on_value):
+				if self._debug:
+					print("[*] match_on_complex_condition() : condition match '%s' 'OK' - %s" % (match_on_value, condition.as_string()))
+				return True
+		return False
 	def match_on_complex_condition_value(self, json_dict, condition, match_on_value):
 		path_exists, path_value = get_json_path(json_dict, condition.path)
 
@@ -505,29 +399,132 @@ class JsonRuleEngine:
 					return True
 
 		return False
+class ReportTemplate:
+	def __init__(self, parent, json_template):
+		self._parent = parent # JsonRule
+		self._definition = json_template
+		self._id = self._definition['id']
+		self._template_dependency = self._definition['template_dependency']
+		self._field_requirement = self._definition['field_requirement']
+		self._field_match = []
+		self._data = self._definition['data']
+
+	@property
+	def id(self):
+		return self._id
+	@property
+	def template_dependency(self):
+		return self._template_dependency
+	@property
+	def field_requirement(self):
+		return self._field_requirement
+	@property
+	def data(self):
+		return self._data
+
+	@staticmethod
+	def template_definition():
+		definition_json_string = """
+		    {
+      "id": null,
+      "template_dependency": null,
+      "field_requirement": null,
+      "data": []
+    }
+		"""
+	@property
+	def has_requirements(self):
+		if "str" != type(self.field_requirement).__name__ or len(self.field_requirement) == 0:
+			return False
+		return True
+
+	def check_requirements(self):
+		print("* ReportTemplate() : rule: %s, field_requirement: '%s'" % (self._parent.id, self.field_requirement))
+		for field_id in self.field_requirement.split(","):
+			if not self._parent.field_exists(field_id.strip()):
+				print("  ! field_requirement() : missing field '%s'" % field_id)
+				return False
+
+			field = self._parent.get_field(field_id.strip())
+			if field.value is None:
+				print("  - field_requirement() : '%s'" % field.id)
+				return False
+			print("  + field_requirement() : '%s: %s'" % (field.id, field.value))
+		return True
+
+	@property
+	def has_dependencies(self):
+		if "str" != type(self.template_dependency).__name__ or len(self.template_dependency) == 0:
+			return False
+		return True
+	def check_dependencies(self):
+		# // no dependencies to evaluate
+		if not self.has_dependencies:
+			return True
+		if self._template_dependency is None or "str" != type(self._template_dependency).__name__ or len(self._template_dependency) == 0:
+			return True
 
 class JsonRule:
-	def __init__(self, json_rule):
+	def __init__(self, parent, json_rule):
+		self._parent = parent # JsonRuleEngine
 		self._definition = json_rule
 		self._conditions = []
-		self._fields = []
+		#self._fields = []
+		self._fields = OrderedDict()
 		self._data_template = None
 		self._data = None
+		self._templates = []
 		self._init_conditions()
 		self._init_fields()
-		self._init_data_template()
+		#self._init_data_template()
+		self._init_templates()
+
+	def check_requirements(self, json_data):
+		# // no requirements to evaluate
+		if not self.has_requirements:
+			return True
+		for enable_on_definition in self.requirement_definitions:
+			condition = JsonCondition.simple_definition(self, enable_on_definition)
+			if not self._parent.match_on_condition(json_data, condition):
+				return False
+		return True
+
+	def check_conditions(self, json_data):
+		# // no conditions to evaluate
+		if not self.has_conditions:
+			return True
+		for condition in self.conditions:
+			# // any condition evaluated as true is enough
+			if self._parent.match_on_condition(json_data, condition):
+				return True
+		return False
+
+	def _init_templates(self):
+		self._templates = []
+		if self._definition["templates"] is not None:
+			for template in self._definition["templates"]:
+				self._templates.append(ReportTemplate(self, template))
 
 	def _init_conditions(self):
+		self._conditions = []
 		if "conditions" in self._definition:
 			for json_condition in self._definition["conditions"]:
 				if "_definition" in json_condition:
 					pass
 				else:
-					self._conditions.append(JsonCondition(json_condition))
+					self._conditions.append(JsonCondition(self, json_condition))
 	def _init_fields(self):
+		self._fields = OrderedDict()
 		fields = self._definition["fields"]
 		for field in fields:
-			self._fields.append(ConditionalField(field))
+			if field['id'] not in self._fields:
+				self._fields[field['id']] = ConditionalField(self, field)
+	def field_exists(self, field_id):
+		return field_id in self.fields
+	def get_field(self, field_id):
+		if field_id in self.fields:
+			return self.fields[field_id]
+		return None
 	def _init_data_template(self):
 		template = self._definition["data"]["template"]
 		self._data_template = ''.join(template)
@@ -638,7 +635,8 @@ class JsonCondition:
 	COMPARE_MAX_LEN = "max-len"
 	COMPARE_REGEX = "regex"
 	
-	def __init__(self, json_condition):
+	def __init__(self, parent, json_condition):
+		self._parent = parent # JsonRule
 		self._definition = json_condition
 		self._compare = self.COMPARE_INVALID
 		self._is_negate = False
@@ -674,31 +672,31 @@ class JsonCondition:
 		"""
 		return json.loads(definition_json_string)
 	@staticmethod
-	def simple_definition(definition):
-		condition_json = JsonCondition.template_definition()
-		condition_json["_definition"] = definition
+	def simple_definition(parent, definition):
+		json_condition = JsonCondition.template_definition()
+		json_condition["_definition"] = definition
 
 		# // '<path>=<match_on>' translates to '<path>:<COMPARE_EQUALS>=<match_on>'
-		if ':' not in condition_json["_definition"] and '=' in condition_json["_definition"]:
+		if ':' not in json_condition["_definition"] and '=' in json_condition["_definition"]:
 			path = definition.split('=')[0].strip()
 			match_on = definition.split('=')[1].strip()
-			condition_json["_definition"] = "%s:%s=%s" % (path, JsonCondition.COMPARE_EQUALS, match_on)
-			definition = condition_json["_definition"]
+			json_condition["_definition"] = "%s:%s=%s" % (path, JsonCondition.COMPARE_EQUALS, match_on)
+			definition = json_condition["_definition"]
 		# // '<path>' translates to '<path>:<COMPARE_EXISTS>'
-		if ':' not in condition_json["_definition"]:
-			condition_json["_definition"] = "%s:%s" % (condition_json["_definition"], JsonCondition.COMPARE_EXISTS)
-			definition = condition_json["_definition"]
+		if ':' not in json_condition["_definition"]:
+			json_condition["_definition"] = "%s:%s" % (json_condition["_definition"], JsonCondition.COMPARE_EXISTS)
+			definition = json_condition["_definition"]
 
 		if ':' in definition and len(definition.split(':')) == 2:
-			condition_json["path"] = definition.split(':')[0].strip().lower()
+			json_condition["path"] = definition.split(':')[0].strip().lower()
 			match_condition = definition.split(':')[1].strip().lower()
 			if len(match_condition) > 0:
 				if '=' in match_condition:
-					condition_json["compare"] = match_condition.split('=')[0].strip().lower()
-					condition_json["match_on"] = match_condition.split('=')[1].strip().lower()
+					json_condition["compare"] = match_condition.split('=')[0].strip().lower()
+					json_condition["match_on"] = match_condition.split('=')[1].strip().lower()
 				else:
-					condition_json["compare"] = match_condition.split('=')[0].strip().lower()
-		return JsonCondition(condition_json)
+					json_condition["compare"] = match_condition.split('=')[0].strip().lower()
+		return JsonCondition(parent, json_condition)
 
 	@property
 	def path(self):
@@ -740,7 +738,7 @@ class JsonCondition:
 		conditions = []
 		if self.is_extended:
 			for condition_definition in self._definition["_extended"].split(","):
-				conditions.append(JsonCondition.simple_definition(condition_definition.strip()))
+				conditions.append(JsonCondition.simple_definition(self._parent, condition_definition.strip()))
 		return conditions
 	@property
 	def extended_definitions(self):
@@ -813,13 +811,14 @@ class JsonCondition:
 		# // required fields
 		if self.path is None or self.compare is None:
 			return False
-		#// unknown compare definition
+		# // unknown compare definition
 		if not self.is_simple_compare and not self.is_complex_compare:
 			return False
 
 		return True
 class ConditionalField:
-	def __init__(self, json_field):
+	def __init__(self, parent, json_field):
+		self._parent = parent # JsonRule
 		self._definition = json_field
 		self._id = self._definition["id"]
 		self._path = self._definition["path"]
@@ -828,8 +827,12 @@ class ConditionalField:
 		self._init_condition()
 
 	def _init_condition(self):
+		self._conditions = []
+		if len(self._definition["condition"]) == 0:
+			self._conditions.append(JsonCondition.simple_definition(self._parent, self._path))
+			return
 		for condition_definition in self._definition["condition"].split(","):
-			self._conditions.append(JsonCondition.simple_definition(condition_definition))
+			self._conditions.append(JsonCondition.simple_definition(self._parent, condition_definition))
 
 	@staticmethod
 	def template_definition():
@@ -842,6 +845,20 @@ class ConditionalField:
 		"""
 		return json.loads(definition_json_string)
 
+	def check_conditions(self, json_data):
+		# // no conditions to evaluate
+		if not self.has_conditions:
+			return True
+		# // all conditions must be evaluated as true
+		for condition in self.conditions:
+			if not self._parent._parent.match_on_condition(json_data, condition):
+				return False
+		return True
+	def evaluate(self, json_data):
+		# // set field value based on evaluated condition
+		if self.check_conditions(json_data):
+			return self.init_value(json_data)
+		return False
 	def as_conditions(self):
 		definitions = []
 		for condition in self.conditions:
@@ -854,11 +871,14 @@ class ConditionalField:
 			return path_value
 		return None
 	def init_value(self, json_data):
+		self._value = None
 		path_exists, path_value = get_json_path(json_data, self.path)
 		if path_exists is not None:
 			self._value = path_value
 			return True
 		return False
+	def reset_value(self):
+		self._value = None
 
 	@property
 	def id(self):
@@ -884,39 +904,170 @@ def get_json_from_file(file_path):
 			return json.load(f)
 	return None
 
-def run_rules_on_json(rule_engine, json_data):
+def run_rules_on_json_data(rule_engine, json_data):
 	for rule in rule_engine.rules:
-		#print(json_prettify(rule._definition))
-		if not rule_engine.match_on_rule_requirements(json_data, rule):
-			continue
-		if not rule_engine.match_on_rule(json_data, rule):
-			continue
+		if run_rule_on_json(rule_engine, rule, json_data):
+			rule_report = build_rule_report(rule_engine, rule, json_data)
+			if rule_report is not None:
+				filler = "*" * int((39 * 2))
+				print("RULE REPORT\n%s\n%s\n%s" % (filler,rule_report,filler))
+			#return True
+	return False
+def run_rule_on_json(rule_engine, rule, json_data):
+	rule_data = ""
+	#print(json_prettify(rule._definition))
+	if not rule.check_requirements(json_data):
+		return False
+	if not rule.check_conditions(json_data):
+		return False
+	return True
 
-		#print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
-		filler = "*" * int(((39 * 2 - len("rule definition")-1) / 2))
-		#print("%s rule definition %s" % (filler, filler))
-		#print(json_prettify(rule._definition))
-		#print("%s" % ("*" * 39 * 2))
+	#print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
+	print("//// Building report ////////")
+	rule_report = build_rule_report(rule_engine, rule, json_data)
+	if rule_report is not None:
+		filler = "*" * int((39 * 2))
+		print("RULE REPORT\n%s\n%s\n%s" % (filler,rule_report,filler))
 
-		fields_with_match = []
-		for field in rule.fields:
+	else:
+		print("Failed to get report for rule '%s' (id: %s)", (rule.name, rule.id))
+	return False
+
+
+
+
+	field_refs_with_match = []
+	for field_id in rule.fields:
+		field = rule.fields[field_id]
+		if rule_engine._debug:
+			print("")
+			print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
+		field.reset_value()
+		if field.check_conditions(json_data):
 			if rule_engine._debug:
-				print("")
-				#print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
-			if rule_engine.match_on_field(json_data, field):
-				if rule_engine._debug:
-					print("[*] Field '%s' - match 'OK'" % field.id)
-				if field.init_value(json_data):
-					fields_with_match.append(field)
-			else:
-				if rule_engine._debug:
-					print("[*] Skipping Field - '%s' with condition '%s'!" % (field.id, field.as_conditions()))
-		if len(fields_with_match) > 0:
-			rule_data = format_rule_data_from_fields(rule_engine, rule, fields_with_match)
-			#if rule_data != rule._data_template:
-			#print("* Match on Rule: %s (id: %s, by: %s / %s)\n\t// %s" % (rule.name, rule.id, rule.owner["researcher"], rule.owner["company"], rule.description))
-			print(rule_data)
-def format_rule_data_from_fields(rule_engine, rule, fields):
+				print("[*] Field '%s' - match 'OK'" % field.id)
+			if field.evaluate(json_data):
+				field_refs_with_match.append(field)
+		else:
+			if rule_engine._debug:
+				print("[*] Skipping Field - '%s' with condition '%s'!" % (field.id, field.as_conditions()))
+	
+	if len(field_refs_with_match) > 0:
+		fields_data = format_rule_data_from_fields(rule_engine, rule, field_refs_with_match)
+		#if rule_data != rule._data_template:
+		#print("* Match on Rule: %s (id: %s, by: %s / %s)\n\t// %s" % (rule.name, rule.id, rule.owner["researcher"], rule.owner["company"], rule.description))
+		#print(fields_data)
+		if len(rule_data) > 0:
+			rule_data = "%s\n" % rule_data
+		rule_data = "%s%s" % (rule_data, fields_data)
+	print("* Match on Rule: %s (id: %s, by: %s / %s)\n\t// %s" % (rule.name, rule.id, rule.owner["researcher"], rule.owner["company"], rule.description))
+	rule_data = format_templated_rule_data(rule_engine, rule, rule_data)
+	print(rule_data)
+	return True
+def build_rule_report(rule_engine, rule, json_data):
+	report_template = get_rule_report_template(rule_engine, rule, json_data)
+	if report_template is None:
+		print("[!] build_rule_report() : no template evaluated for rule '%s' (id: %s)" % (rule.name, rule.id))
+		return None
+
+	return format_rule_report_template(rule, report_template, json_data)
+def get_rule_report_template(rule_engine, rule, json_data):
+	evaluated_rule_fields = get_evaluated_rule_fields(rule_engine, rule, json_data)
+	if len(evaluated_rule_fields) == 0:
+		print("[DEBUG] get_rule_report_template() : Rule fields evaluation not 'Fullfilled'")
+		return None
+
+	report_template = ''
+	evaluated_template_data_chunks = OrderedDict()
+	print("get_rule_report_template() : * Rule(id: %s).Name: %s - get report template" % (rule.id, rule.name))
+	for field in evaluated_rule_fields:
+		print("get_rule_report_template() : evaluated_field.id: %s\t - value: '%s'" % (field.id, field.value))
+	for template_chunk in rule._templates:
+		print("get_rule_report_template() : // Template - id: %s" % (template_chunk.id))
+		if not template_chunk.check_requirements():
+			print("get_rule_report_template() :   [-] 'NOT Fullfilled' - template.id: %s - Template requirements - rule '%s' (id: %s)" % (template_chunk.id, rule.name, rule.id))
+			continue
+		print("get_rule_report_template() :   [+] 'Fullfilled' - template.id: %s - Template requirements - rule '%s' (id: %s)" % (template_chunk.id, rule.name, rule.id))
+		evaluated_template_data_chunks[template_chunk.id] = template_chunk
+		print("get_rule_report_template() :   #### template_chunk '%s'" % template_chunk._definition)
+	# // build output from evaluated template data chunks
+	for template_chunk_id in evaluated_template_data_chunks:
+		template_chunk = evaluated_template_data_chunks[template_chunk_id]
+		print("  - get_rule_report_template() :  template.id: %s, \n\tdata '%s'" % (template_chunk.id, template_chunk.data))
+		if not template_chunk.has_dependencies:
+			report_template = "%s%s" % (report_template, ''.join(template_chunk.data))
+		else:
+			dependent_templates_evaluated = True
+			for dependent_template in template_chunk.template_dependency.split(","):
+				if dependent_template not in evaluated_template_data_chunks:
+					dependent_templates_evaluated = False
+					print("  [!!!!] get_rule_report_template() : template.id: %s - dependent template (%s) not evaluated" % (template_chunk.id, dependent_template))
+					break
+			if dependent_templates_evaluated:
+				report_template = "%s%s" % (report_template, ''.join(template_chunk.data))
+
+	return report_template
+def format_rule_report_template(rule, report_template, json_data):
+	formatted_report_template = report_template
+
+	valid_rule_refs = "id,name,description,owner.researcher,owner.company".split(",")
+
+	refs = extract_refs_from_data(formatted_report_template)
+	for ref in refs:
+		if ":" not in ref:
+			continue
+
+		ref_type = ref.split(":")[0]
+		ref_id = ref.split(":")[1]
+		ref_value = None
+
+		if "field" == ref_type:
+			if rule.field_exists(ref_id):
+				field = rule.get_field(ref_id)
+				ref_value = str(field.value)
+
+		elif "rule" == ref_type:
+			if ref_id not in valid_rule_refs:
+				continue
+			path_exists, path_value = get_json_path(rule._definition, ref_id)
+			if path_exists:
+				ref_value = path_value
+		elif "data" == ref_type:
+			path_exists, path_value = get_json_path(json_data, ref_id)
+			if path_exists:
+				ref_value = path_value
+
+		if ref_value is not None:
+			formatted_report_template = formatted_report_template.replace("[%s]" % ref, ref_value)
+
+	return formatted_report_template.rstrip()
+
+def get_evaluated_rule_fields(rule_engine, rule, json_data):
+	evaluated_rule_fields = []
+	for field_id in rule.fields:
+		field = rule.fields[field_id]
+		if field.evaluate(json_data):
+			evaluated_rule_fields.append(field)
+	return evaluated_rule_fields
+def extract_refs_from_data(data):
+	ref_list = []
+	refs = [x.group() for x in re.finditer( r'\[(.*?)\]', data)]
+	for ref in refs:
+		if ":" in ref:
+			ref_type = ref[1:].split(":")[0]
+			ref_id = ref[1:].split(":")[1][:-1]
+			ref_list.append("%s:%s" % (ref_type, ref_id))
+		else:
+			ref_list.append("data:%s" % ref)
+	return ref_list
+def format_templated_rule_data(rule_engine, rule, rule_data):
+	format_definition = rule._data_template
+
+	field_refs = extract_refs_from_data(rule_data)
+
+	return rule_data
+
+def format_rule_data_from_fields(rule_engine, rule, field_refs):
 	format_definition = rule._data_template
 	rule_fields = []
 	rule_field_list = "id,name,description,owner.researcher,owner.company".split(",")
@@ -928,7 +1079,7 @@ def format_rule_data_from_fields(rule_engine, rule, fields):
 	for rule_field in rule_fields:
 		if rule_field[0] in format_definition:
 			format_definition = format_definition.replace(rule_field[0], rule_field[1])
-	for field in fields:
+	for field in field_refs:
 		if field.value is not None:
 			field_value_type = type(field.value).__name__
 			if "bool" == field_value_type or "int" == field_value_type:
@@ -957,12 +1108,13 @@ def run_rules_on_json_file(rule_engine, json_file):
 			return
 
 		for json_item in json_data:
-			run_rules_on_json(rule_engine, json_item)
-			#break
+			if run_rules_on_json_data(rule_engine, json_item):
+				break
 
 	elif "dict" == type(json_data).__name__:
 		print("run_rules_on_json_file() : json_data.type: dict")
-		run_rules_on_json(rule_engine, json_data)
+		if run_rules_on_json_data(rule_engine, json_data):
+			return
 
 	else:
 		print("Unknown json data in '%s'" % json_file)
@@ -1014,7 +1166,7 @@ def main(args):
 
 if __name__ == '__main__':
 	import argparse
-	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Test - Json Rule Engine")
+	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Rule based Detection Engine for Json content")
 	parser.add_argument('-d', '--debug', dest='debug_mode', action='store_true', help="Enabled debug mode")
 	parser.add_argument('-r', '--rule-file', dest='custom_rule_file', help="Custom rules file")
 	parser.add_argument('-j', '--json-file', dest='custom_json_file', help="Custom json file")
