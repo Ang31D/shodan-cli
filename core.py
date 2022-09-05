@@ -71,8 +71,12 @@ class JsonRuleEngine:
 		self._init_rules()
 	def _init_rules(self):
 		self._rules = []
+		if self._json is None:
+			return
 		for json_rule in self._json:
 			self._rules.append(JsonRule(self, json_rule))
+	def _add_rule(self, rule):
+		self._rules.append(self, rule)
 	@property
 	def rules(self):
 		return self._rules
@@ -850,11 +854,14 @@ class ConditionalField:
 		self._definition = json_field
 		self._id = self._definition["id"]
 		self._path = self._definition["path"]
+		self._condition_only = False
 		self._value = None
 		self._conditions = []
 		self._init_condition()
 
 	def _init_condition(self):
+		if self._path is None:
+			self._condition_only = True
 		self._conditions = []
 		if len(self._definition["condition"]) == 0:
 			self._conditions.append(JsonCondition.simple_definition(self._parent, self._path))
@@ -883,8 +890,12 @@ class ConditionalField:
 				return False
 		return True
 	def evaluate(self, json_data):
-		# // set field value based on evaluated condition
+		# // set field value only if condition evaluates to true
 		if self.check_conditions(json_data):
+			# // only evaluate conditions
+			if self._condition_only:
+				self._value = True
+				return True
 			return self.init_value(json_data)
 		return False
 	def as_conditions(self):
@@ -931,109 +942,94 @@ def get_json_from_file(file_path):
 		with open(file_path, 'r') as f:
 			return json.load(f)
 	return None
+def get_data_evidence(rule_engine, json_data):
+	report_data = ""
 
-def run_rules_on_json_data(rule_engine, json_data):
 	rule_engine.reset()
 	for rule in rule_engine.rules:
-		#rule._reset_fields()
-		if run_rule_on_json(rule_engine, rule, json_data):
-			#print("   //// Building report ////////")
-			rule_report = build_rule_report(rule_engine, rule, json_data)
-			if rule_report is not None:
-				#print("// Rule(id: %s).Name: %s - get report template" % (rule.id, rule.name))
-				filler = "*" * int((39 * 2))
-				#print("RULE REPORT\n%s\n%s\n%s\n" % (filler,rule_report,filler))
-				#print("RULE REPORT\n%s\n%s\n" % (filler,rule_report))
-				print("%s\n" % rule_report)
-			#return True
+		rule_evidence = get_rule_evidence(rule, json_data)
+		if rule_evidence is not None:
+			if len(report_data) > 0:
+				report_data = "%s\n" % (report_data)
+			report_data = "%s%s" % (report_data, rule_evidence)
+
+	if len(report_data) > 0:
+		return report_data
+	return None
+def run_rules_on_json_data(rule_engine, json_data):
+	report_data = ""
+
+	rule_engine.reset()
+	for rule in rule_engine.rules:
+		rule_evidence = get_rule_evidence(rule, json_data)
+		if rule_evidence is not None:
+			#print("**** // Evaluate Rule(id: %s).Name: %s" % (rule.id, rule.name))
+			#print(rule_evidence)
+			if len(report_data) > 0:
+				report_data = "%s\n" % (report_data)
+			report_data = "%s%s" % (report_data, rule_evidence)
+
+	if len(report_data) > 0:
+		print(report_data)
+		return True
 	return False
-def run_rule_on_json(rule_engine, rule, json_data):
-	rule_data = ""
-	#print("// Rule(id: %s).Name: %s - get report template" % (rule.id, rule.name))
-	#print(json_prettify(rule._definition))
+def get_rule_evidence(rule, json_data):
+	evidence_data = ""
 	if not rule.check_requirements(json_data):
-		#print("   - requirements  - 'not fullfilled'")
+		return None
+	if not rule.check_conditions(json_data):
+		return None
+	
+	rule_report = build_rule_report(rule, json_data)
+	if rule_report is None:
+		return None
+
+	filler = "*" * int((39 * 2))
+	if len(evidence_data) > 0:
+		evidence_data = "%s\n" % (evidence_data)
+	evidence_data = "%s%s" % (evidence_data, rule_report)
+	return evidence_data
+def check_rule_on_json(rule, json_data):
+	if not rule.check_requirements(json_data):
 		return False
 	if not rule.check_conditions(json_data):
-		#print("   - conditions - 'NOT OK'")
 		return False
-	#print("   - requirements - 'fullfilled'")
-	#print("   - conditions - 'OK'")
 	return True
 
-	#print("Rule: %s (by: %s / %s)\n\t%s" % (rule.name, rule.owner["researcher"], rule.owner["company"], rule.description))
-	print("//// Building report ////////")
-	rule_report = build_rule_report(rule_engine, rule, json_data)
-	if rule_report is not None:
-		print("// Rule(id: %s).Name: %s - get report template" % (rule.id, rule.name))
-		filler = "*" * int((39 * 2))
-		print("RULE REPORT\n%s\n%s\n%s" % (filler,rule_report,filler))
-
-	else:
-		print("Failed to get report for rule '%s' (id: %s)", (rule.name, rule.id))
-	return False
-
-
-
-
-#	field_refs_with_match = []
-#	for field_id in rule.fields:
-#		field = rule.fields[field_id]
-#		if rule_engine._debug:
-#			print("")
-#			print("field id: %s, path: %s, condition: %s" % (field.id, field.path, field.as_conditions()))
-#		field.reset_value()
-#		if field.check_conditions(json_data):
-#			if rule_engine._debug:
-#				print("[*] Field '%s' - match 'OK'" % field.id)
-#			if field.evaluate(json_data):
-#				field_refs_with_match.append(field)
-#		else:
-#			if rule_engine._debug:
-#				print("[*] Skipping Field - '%s' with condition '%s'!" % (field.id, field.as_conditions()))
-#
-#	if len(field_refs_with_match) > 0:
-#		fields_data = format_rule_data_from_fields(rule_engine, rule, field_refs_with_match)
-#		#if rule_data != rule._data_template:
-#		#print("* Match on Rule: %s (id: %s, by: %s / %s)\n\t// %s" % (rule.name, rule.id, rule.owner["researcher"], rule.owner["company"], rule.description))
-#		#print(fields_data)
-#		if len(rule_data) > 0:
-#			rule_data = "%s\n" % rule_data
-#		rule_data = "%s%s" % (rule_data, fields_data)
-#	print("* Match on Rule: %s (id: %s, by: %s / %s)\n\t// %s" % (rule.name, rule.id, rule.owner["researcher"], rule.owner["company"], rule.description))
-#	rule_data = format_templated_rule_data(rule_engine, rule, rule_data)
-#	print(rule_data)
-#	return True
-def build_rule_report(rule_engine, rule, json_data):
-	report_template = get_rule_report_template(rule_engine, rule, json_data)
+def build_rule_report(rule, json_data):
+	report_template = get_rule_report_template(rule, json_data)
 	if report_template is None:
 		return None
 
-	return format_rule_report_template(rule, report_template, json_data)
-def get_rule_report_template(rule_engine, rule, json_data):
+	#return format_rule_report_template(rule, report_template, json_data)
+	rule_report = format_rule_report_template(rule, report_template, json_data)
+	if rule_report is None or "str" != type(rule_report).__name__ or len(rule_report) == 0:
+		return None
+	return rule_report
+def get_rule_report_template(rule, json_data):
 	evaluated_rule_fields = get_evaluated_rule_fields(rule, json_data)
 	if len(evaluated_rule_fields) == 0:
 		return None
 
 	report_template = ''
 	evaluated_template_data_chunks = OrderedDict()
-	for template_chunk in rule._templates:
-		if not template_chunk.check_requirements():
+	for template_section in rule._templates:
+		if not template_section.check_requirements():
 			continue
-		evaluated_template_data_chunks[template_chunk.id] = template_chunk
+		evaluated_template_data_chunks[template_section.id] = template_section
 	# // build output from evaluated template data chunks
-	for template_chunk_id in evaluated_template_data_chunks:
-		template_chunk = evaluated_template_data_chunks[template_chunk_id]
-		if not template_chunk.has_dependencies:
-			report_template = "%s%s" % (report_template, ''.join(template_chunk.data))
+	for template_section_id in evaluated_template_data_chunks:
+		template_section = evaluated_template_data_chunks[template_section_id]
+		if not template_section.has_dependencies:
+			report_template = "%s%s" % (report_template, ''.join(template_section.data))
 		else:
 			dependent_templates_evaluated = True
-			for dependent_template in template_chunk.template_dependency.split(","):
+			for dependent_template in template_section.template_dependency.split(","):
 				if dependent_template not in evaluated_template_data_chunks:
 					dependent_templates_evaluated = False
 					break
 			if dependent_templates_evaluated:
-				report_template = "%s%s" % (report_template, ''.join(template_chunk.data))
+				report_template = "%s%s" % (report_template, ''.join(template_section.data))
 
 	return report_template
 def format_rule_report_template(rule, report_template, json_data):
@@ -1077,7 +1073,6 @@ def format_rule_report_template(rule, report_template, json_data):
 	return formatted_report_template.rstrip()
 
 def get_evaluated_rule_fields(rule, json_data):
-#def get_evaluated_rule_fields(rule_engine, rule, json_data):
 	evaluated_rule_fields = []
 	for field_id in rule.fields:
 		field = rule.fields[field_id]
@@ -1096,34 +1091,6 @@ def extract_refs_from_data(data):
 			ref_id = ref[1:][:-1]
 		ref_list.append("%s:%s" % (ref_type, ref_id))
 	return ref_list
-def format_templated_rule_data(rule_engine, rule, rule_data):
-	format_definition = rule._data_template
-
-	field_refs = extract_refs_from_data(rule_data)
-
-	return rule_data
-
-def format_rule_data_from_fields(rule_engine, rule, field_refs):
-	format_definition = rule._data_template
-	rule_fields = []
-	rule_field_list = "id,name,description,owner.researcher,owner.company".split(",")
-	for path in rule_field_list:
-		path_exists, path_value = get_json_path(rule._definition, path)
-		if path_exists:
-			rule_fields.append(["[rule:%s]" % path, path_value])
-	
-	for rule_field in rule_fields:
-		if rule_field[0] in format_definition:
-			format_definition = format_definition.replace(rule_field[0], rule_field[1])
-	for field in field_refs:
-		if field.value is not None:
-			field_value_type = type(field.value).__name__
-			if "bool" == field_value_type or "int" == field_value_type:
-				field._value = str(field.value).lower()
-			format_pattern = "[field:%s]" % field.id
-			if format_pattern in format_definition:
-				format_definition = format_definition.replace(format_pattern, field.value)
-	return format_definition
 
 def run_rules_on_json_file(rule_engine, json_file):
 	if not os.path.isfile(json_file):
@@ -1143,19 +1110,92 @@ def run_rules_on_json_file(rule_engine, json_file):
 			print("Unknown json data in '%s'" % json_file)
 			return
 
+		evidence_report = ""
 		for json_item in json_data:
-			if run_rules_on_json_data(rule_engine, json_item):
-				break
+			json_sha256_hash = get_json_data_sha256_hash(json_item)
+			#print("sha256 hash: %s, type: data.chunk, file: %s" % (json_sha256_hash, json_file))
+			#if run_rules_on_json_data(rule_engine, json_item):
+			#	pass
+			#	#break
+			evidence_data = get_data_evidence(rule_engine, json_item)
+			if evidence_data is not None:
+				#print("sha256 hash: %s, type: data.chunk, file: %s" % (json_sha256_hash, json_file))
+				#print(evidence_data)
+				if len(evidence_report) > 0:
+					evidence_report = "%s\n" % (evidence_report)
+				evidence_report = "%s%s" % (evidence_report, evidence_data)
+		if len(evidence_report) > 0:
+			print("**** Evidence found in file '%s'" % json_file)
+			print(evidence_report)
 
 	elif "dict" == type(json_data).__name__:
 		print("run_rules_on_json_file() : json_data.type: dict")
+		json_sha256_hash = get_json_data_sha256_hash(json_data)
+		print("sha256 hash: %s, type: data, file: %s" % (json_sha256_hash, json_file))
 		if run_rules_on_json_data(rule_engine, json_data):
 			return
 
 	else:
 		print("Unknown json data in '%s'" % json_file)
 		return
+def get_results_from_rules_on_json_file(rule_engine, json_file):
+	result = ""
+	if not os.path.isfile(json_file):
+		#print("ERROR - Missing 'json' file '%s'" % json_file)
+		return None
+	#print("Running %s rules on %s" % (len(rule_engine.rules), json_file))
+	json_data = get_json_data(json_file)
+	if json_data is None:
+		#print("Failed to get json data from '%s'" % json_file)
+		return None
 
+	if "list" == type(json_data).__name__:
+		if len(json_data) == 0:
+			print("Missing json data in '%s'" % json_file)
+			return None
+		if len(json_data) > 0 and "dict" != type(json_data[0]).__name__:
+			print("Unknown json data in '%s'" % json_file)
+			return None
+
+		evidence_report = ""
+		for json_item in json_data:
+			json_sha256_hash = get_json_data_sha256_hash(json_item)
+			#print("sha256 hash: %s, type: data.chunk, file: %s" % (json_sha256_hash, json_file))
+			#if run_rules_on_json_data(rule_engine, json_item):
+			#	pass
+			#	#break
+			evidence_data = get_data_evidence(rule_engine, json_item)
+			if evidence_data is not None:
+				#print(evidence_data)
+				if len(evidence_report) > 0:
+					evidence_report = "%s\n" % (evidence_report)
+				evidence_report = "%s%s" % (evidence_report, evidence_data)
+		if len(evidence_report) > 0:
+			if len(result) > 0:
+				result = "%s\n" % (result)
+			result = "%s%s" % (result, evidence_report)
+			#print("**** Evidence found in file '%s'" % json_file)
+			#print(evidence_report)
+			return result
+
+	elif "dict" == type(json_data).__name__:
+		json_sha256_hash = get_json_data_sha256_hash(json_data)
+		#print("sha256 hash: %s, type: data, file: %s" % (json_sha256_hash, json_file))
+		if run_rules_on_json_data(rule_engine, json_data):
+			return
+		evidence_report = get_data_evidence(rule_engine, json_data)
+		if evidence_report is None:
+			return None
+		return evidence_report
+
+	else:
+		#print("Unknown json data in '%s'" % json_file)
+		return None
+def get_json_data_sha256_hash(json_data):
+	sha256_hash = "x" * 64
+	if "dict" == type(json_data).__name__:
+		sha256_hash = hash_string(json_minify(json_data))
+	return sha256_hash
 def get_json_data(file_path):
 	json_data = get_json_from_file(file_path)
 	if "dict" == type(json_data).__name__:
@@ -1199,10 +1239,37 @@ def main(args):
 	json_data = get_json_from_file(json_file)
 	json_rules = get_json_from_file(rules_file)
 
-	engine = JsonRuleEngine(json_rules)
-	engine._debug = args.debug_mode
+	if "list" == type(json_rules).__name__:
+		engine = JsonRuleEngine(json_rules)
+		engine._debug = args.debug_mode
+		run_rules_on_json_file(engine, json_file)
+		return
 
-	run_rules_on_json_file(engine, json_file)
+	if "dict" != type(json_rules).__name__ or "repository" not in json_rules:
+		return
+	#print(json_prettify(json_rules))
+	for json_repo in json_rules["repository"]:
+		if not json_repo["enabled"]:
+			continue
+		#print(json_prettify(json_repo))
+
+		rules_file = json_repo["path"]
+		json_rules = get_json_from_file(rules_file)
+		#print(json_prettify(json_rules))
+		engine = JsonRuleEngine(json_rules)
+		engine._debug = args.debug_mode
+		#run_rules_on_json_file(engine, json_file)
+		result = get_results_from_rules_on_json_file(engine, json_file)
+		if result is None:
+			continue
+		print("**** Rule '%s' matching on file '%s'" % (json_repo["description"], json_file))
+		print(result)
+		print("")
+	return
+
+	#engine = JsonRuleEngine(json_rules)
+	#engine._debug = args.debug_mode
+	#run_rules_on_json_file(engine, json_file)
 
 if __name__ == '__main__':
 	import argparse
