@@ -2,6 +2,7 @@ import json
 import os
 from collections import OrderedDict
 import re
+import hashlib
 
 def json_prettify(json_data):
 	json_type = type(json_data).__name__
@@ -55,6 +56,10 @@ def json_path_exists(json_dict, path):
 	path_exists, path_value = get_json_path(json_dict, path)
 	return path_exists
 
+# // Return a SHA-256 hash of the given string
+def hash_string(string):
+	return hashlib.sha256(string.encode('utf-8')).hexdigest()
+
 class JsonRuleEngine:
 	def __init__(self, json_data):
 		self._json = json_data
@@ -62,6 +67,8 @@ class JsonRuleEngine:
 		self._rules = []
 		self._init_rules()
 
+	def reset(self):
+		self._init_rules()
 	def _init_rules(self):
 		self._rules = []
 		for json_rule in self._json:
@@ -634,6 +641,7 @@ class JsonCondition:
 	COMPARE_IS_NULL = "is-null"
 	COMPARE_NULL = "null"
 	# // simple complex conditions
+	COMPARE_IS = "is" # as equals but case sensitive
 	COMPARE_EQUALS = "equals"
 	COMPARE_VALUE = "value" # same as COMPARE_EQUALS
 	COMPARE_TYPE = "type"
@@ -778,6 +786,8 @@ class JsonCondition:
 		return False
 	@property
 	def is_complex_compare(self):
+		if self.COMPARE_IS == self.compare:
+			return True
 		if self.COMPARE_EQUALS == self.compare:
 			return True
 		if self.COMPARE_VALUE == self.compare:
@@ -923,6 +933,7 @@ def get_json_from_file(file_path):
 	return None
 
 def run_rules_on_json_data(rule_engine, json_data):
+	rule_engine.reset()
 	for rule in rule_engine.rules:
 		#rule._reset_fields()
 		if run_rule_on_json(rule_engine, rule, json_data):
@@ -1000,7 +1011,7 @@ def build_rule_report(rule_engine, rule, json_data):
 
 	return format_rule_report_template(rule, report_template, json_data)
 def get_rule_report_template(rule_engine, rule, json_data):
-	evaluated_rule_fields = get_evaluated_rule_fields(rule_engine, rule, json_data)
+	evaluated_rule_fields = get_evaluated_rule_fields(rule, json_data)
 	if len(evaluated_rule_fields) == 0:
 		return None
 
@@ -1065,7 +1076,8 @@ def format_rule_report_template(rule, report_template, json_data):
 
 	return formatted_report_template.rstrip()
 
-def get_evaluated_rule_fields(rule_engine, rule, json_data):
+def get_evaluated_rule_fields(rule, json_data):
+#def get_evaluated_rule_fields(rule_engine, rule, json_data):
 	evaluated_rule_fields = []
 	for field_id in rule.fields:
 		field = rule.fields[field_id]
@@ -1154,6 +1166,10 @@ def get_json_data(file_path):
 def main(args):
 	#root_dir = "/home/bob104/tools/shodan-cli"
 	root_dir = "/home/angeld/Workspace/coding/shodan-py"
+	root_dir2 = "/home/bob104/tools/shodan-cli"
+	if os.path.isdir(root_dir2):
+		root_dir = root_dir2
+	
 	data_dir = os.path.join(root_dir, "shodan-data")
 	#data_dir = "/home/angeld/Workspace/coding/shodan-py/shodan-data"
 	target = "91.195.240.94"
