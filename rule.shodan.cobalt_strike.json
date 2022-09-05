@@ -1,0 +1,162 @@
+[
+  {
+    "id": "shodan-cobalt_strike",
+    "name": "cobalt strike detection (shodan)",
+    "description": "detects cobalt strike indicators from shodan api host",
+    "owner": {
+      "researcher": "John Doe",
+      "company": "Company X"
+    },
+    "enable_on": "_shodan,_shodan.module:begins=http",
+    "conditions": [
+      {
+        "path": null,
+        "compare": null,
+        "match_on": null,
+        "loose_match": true,
+        "_extended": "product,product:min-len=1"
+      },
+      {
+        "path": null,
+        "compare": null,
+        "match_on": null,
+        "loose_match": true,
+        "_extended": "port:equals=50050"
+      }
+    ],
+    "fields": [
+      {
+        "id": "shodan.id",
+        "path": "_shodan.id",
+        "condition": "_shodan.id"
+      },
+      {
+        "id": "host.ip",
+        "path": "ip_str",
+        "condition": ""
+      },
+      {
+        "id": "service.port",
+        "path": "port",
+        "condition": ""
+      },
+      {
+        "id": "service.protocol",
+        "path": "transport",
+        "condition": ""
+      },
+      {
+        "id": "service.module",
+        "path": "_shodan.module",
+        "condition": "_shodan.module"
+      },
+      {
+        "id": "product.name",
+        "path": "product",
+        "condition": "product:exists,product:min-len=1"
+      },
+      {
+        "id": "has.defined.product",
+        "path": null,
+        "condition": "product:exists,product:min-len=1"
+      },
+      {
+        "id": "product.is.cobalt_strike",
+        "path": null,
+        "condition": "product:contains=Cobalt Strike Beacon"
+      },
+      {
+        "id": "cobalt_strike.malleable.c2.profile.exists",
+        "path": null,
+        "condition": "cobalt_strike_beacon:exists"
+      },
+      {
+        "id": "cobalt_strike.profile.watermark",
+        "path": "cobalt_strike_beacon.x86.watermark",
+        "condition": "cobalt_strike_beacon.x86.watermark:exists"
+      },
+      {
+        "id": "cobalt_strike.profile.http-get.uri",
+        "path": "cobalt_strike_beacon|x86|http-get.uri",
+        "condition": "cobalt_strike_beacon:exists"
+      },
+      {
+        "id": "cobalt_strike.profile.http-post.uri",
+        "path": "cobalt_strike_beacon|x86|http-post.uri",
+        "condition": "cobalt_strike_beacon:exists"
+      },
+      {
+        "id": "cobalt_strike.profile.useragent_header",
+        "path": "cobalt_strike_beacon|x86|useragent_header",
+        "condition": "cobalt_strike_beacon|x86|useragent_header:exists"
+      },
+      {
+        "id": "cobalt_strike.profile.http-get.client",
+        "path": "cobalt_strike_beacon|x86|http-get.client",
+        "condition": "cobalt_strike_beacon|x86|http-get.client:exists"
+      },
+      {
+        "id": "cobalt_strike.profile.http-post.client",
+        "path": "cobalt_strike_beacon|x86|http-post.client",
+        "condition": "cobalt_strike_beacon|x86|http-post.client:exists"
+      },
+      {
+        "id": "cobalt_strike.profile.sleeptime",
+        "path": "cobalt_strike_beacon|x86|sleeptime",
+        "condition": "cobalt_strike_beacon|x86|sleeptime:exists"
+      },
+      {
+        "id": "tcp.port.443",
+        "path": "port",
+        "condition": "transport=tcp,port=443"
+      },
+      {
+        "id": "cobalt_strike.team_server.default_port.50050",
+        "path": "port",
+        "condition": "port:equals=50050"
+      }
+    ],
+    "templates": [
+      {
+        "id": "product.cobalt_strike",
+        "template_dependency": "",
+        "field_requirement": "product.is.cobalt_strike",
+        "data": [
+          "[ip_str]\t\t[port]/[transport]\t\tCobalt Strike # Shodan - ID: [_shodan.id]\n",
+          "\t* [field:product.name]"
+        ]
+      },
+      {
+        "id": "cobalt_strike.malleable.c2.profile",
+        "template_dependency": "product.cobalt_strike",
+        "field_requirement": "cobalt_strike.malleable.c2.profile.exists",
+        "data": [
+          "\t # Malleable C2 Profile",
+          "\n\t    - watermark \t- x86: '[field:cobalt_strike.profile.watermark]'",
+          "\n\t                \t  x64: '[cobalt_strike_beacon.x64.watermark]'",
+          "\n\t    - user-agent \t- x86: '[field:cobalt_strike.profile.useragent_header]'",
+          "\n\t                 \t  x64: '[cobalt_strike_beacon|x64|useragent_header]'",
+          "\n\t    - http-get.uri \t- x86: '[field:cobalt_strike.profile.http-get.uri]'",
+          "\n\t                   \t  x64: '[cobalt_strike_beacon|x64|http-get.uri]'",
+          "\n\t    - http-post.uri\t- x86: '[field:cobalt_strike.profile.http-post.uri]'",
+          "\n\t                   \t  x64: '[cobalt_strike_beacon|x64|http-post.uri]'",
+          "\n\t    - http-get.client \t- x86: '[field:cobalt_strike.profile.http-get.client]'",
+          "\n\t                      \t  x64: '[cobalt_strike_beacon|x64|http-get.client]'",
+          "\n\t    - http-post.client \t- x86: '[field:cobalt_strike.profile.http-post.client]'",
+          "\n\t                       \t  x64: '[cobalt_strike_beacon|x64|http-post.client]'",
+          "\n\t    - sleeptime \t- x86: '[field:cobalt_strike.profile.sleeptime]'",
+          "\n\t                \t  x64: '[cobalt_strike_beacon|x64|sleeptime]'"
+                  ]
+      },
+      {
+        "id": "possible.product.cobalt_strike.team_server",
+        "template_dependency": "",
+        "field_requirement": "cobalt_strike.team_server.default_port.50050",
+        "data": [
+          "[ip_str]\t\t[port]/[transport]\tCobalt Strike # Shodan - ID: [_shodan.id]\n",
+          "\t* Potential Cobalt Strike Team Server (Default port for Team Server is '[field:cobalt_strike.team_server.default_port.50050]')"
+        ]
+      }
+    ]
+  }
+]
