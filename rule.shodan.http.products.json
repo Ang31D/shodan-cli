@@ -22,13 +22,6 @@
         "match_on": null,
         "loose_match": true,
         "_extended": "product,product:min-len=1"
-      },
-      {
-        "path": null,
-        "compare": null,
-        "match_on": null,
-        "loose_match": true,
-        "_extended": "port:equals=50050"
       }
     ],
     "fields": [
@@ -180,42 +173,6 @@
         "field_requirement": "http.page.title",
         "data": [
           "\n\t    - Page Title: '[field:http.page.title]'"
-        ]
-      },
-      {
-        "id": "product.cobalt_strike",
-        "template_dependency": "rule.header",
-        "field_requirement": "product.cobalt_strike",
-        "data": [
-          "\t* [field:product]"
-        ]
-      },
-      {
-        "id": "cobalt_strike-config",
-        "template_dependency": "product.cobalt_strike",
-        "field_requirement": "",
-        "data": [
-          "\t # Malleable C2 Profile",
-          "\n\t    - watermark \t- x86: '[field:cobalt_strike.config.watermark]'",
-          "\n\t                \t  x64: '[cobalt_strike_beacon.x64.watermark]'",
-          "\n\t    - http-get.uri \t- x86: '[field:cobalt_strike.config.http-get.uri]'",
-          "\n\t                   \t  x64: '[cobalt_strike_beacon|x64|http-get.uri]'",
-          "\n\t    - http-post.uri\t- x86: '[field:cobalt_strike.config.http-post.uri]'",
-          "\n\t                   \t  x64: '[cobalt_strike_beacon|x64|http-post.uri]'",
-          "\n\t    - user-agent \t- x86: '[field:cobalt_strike.config.useragent_header]'",
-          "\n\t                 \t  x64: '[cobalt_strike_beacon|x64|useragent_header]'",
-          "\n\t    - http-get.client \t- x86: '[field:cobalt_strike.config.http-get.client]'",
-          "\n\t                      \t  x64: '[cobalt_strike_beacon|x64|http-get.client]'",
-          "\n\t    - http-post.client \t- x86: '[field:cobalt_strike.config.http-post.client]'",
-          "\n\t                      \t  x64: '[cobalt_strike_beacon|x64|http-post.client]'"
-        ]
-      },
-      {
-        "id": "product.cobalt_strike.team_server",
-        "template_dependency": "rule.header",
-        "field_requirement": "cobalt_strike.team_server.default_port.50050",
-        "data": [
-          "\t* Potential Cobalt Strike Team Server (Default port for Team Server is '[field:cobalt_strike.team_server.default_port.50050]')"
         ]
       }
     ]
