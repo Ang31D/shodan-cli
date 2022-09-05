@@ -1,0 +1,16 @@
+{
+  "repository": [
+    {
+      "description": "detection for http products",
+      "path": "rule.shodan.http.products.json",
+      "source": "shodan host api",
+      "enabled": true
+    },
+    {
+      "description": "detection for cobalt strike hosted on http",
+      "path": "rule.shodan.cobalt_strike.json",
+      "source": "shodan host api",
+      "enabled": true
+    }
+  ]
+}
