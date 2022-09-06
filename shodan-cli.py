@@ -19,78 +19,6 @@ from support import RelativeDate, DateHelper
 from fnmatch import fnmatch
 
 
-# // steal date formats from 'git'
-"""
-git log --since="<year-month-day>"
-# --since=<date>, --after=<date>
-# Show commit messages since <date>
-# Show commits more recent than a specific date.
-# ex. git log --since="2016-10-07"
-
-git log --oneline --after=1.week.ago
-git log --oneline --format="%h %an (%ar) - %s" --after=2.day.ago
-git log --since="2.weeks.ago"
-# gets the list of commits made in the last two weeks
-git log --since="2.weeks.ago" --until="2.weeks.3.days.ago"
-git log --until="2.weeks.ago" --since="2.weeks.3.days.ago"
-2 years 1 day 3 minutes ago
-# gets the list of commits made (between) after 2 weeks and 3 days after that
-# from 2 weeks ago, to 3 days ago
-# Timed reflogs
-# Filter reflog by time
-# http://alblue.bandlem.com/2011/05/git-tip-of-week-reflogs.html
-# Working with dates in Git
-# https://alexpeattie.com/blog/working-with-dates-in-git
-# Specification for syntax of git dates
-# http://stackoverflow.com/questions/14023794/specification-for-syntax-of-git-dates
-# 
-# Various supported forms include:
-**** relative dates
-** ex.
-* today
-* 1 month 2 days ago
-* six minutes ago
-# You can include days of the week ("last Tuesday"),
-# timezones ("3PM GMT") and
-# 'named' times ("noon", "tea time").
-<number>.relative
-* 1.minute.ago
-* 1.hour.ago
-* 1.day.ago
-* 1.week.ago
-* 1.month.ago
-* 1.year.ago
-* yesterday
-* noon
-* midnight
-* tea
-* PM
-* AM
-* never
-* now
-**** specific date, fixed dates (in any format)
-** ex.
-* 10-11-1998
-* Fri Jun 4 15:46:55 2010 +0200
-* 9/9/83
-<year>-<month>-<day>(.<hour>:<minute>:<second>)
-* 2011-05-17.09:00:00
-* 2011-05-17
-**** examples
-git log --since=midnight
-# get commits from all of today
-git log --since="2 weeks ago"
-# Show the changes during the last two weeks
-
-# The plural forms are also accepted (e.g. 2.weeks.ago)
-# as well as combinations (e.g. 1.day.2.hours.ago).
-# 
-# The time format is most useful if you want to get back to a branch's state as of an hour ago,
-# or want to see what the differences were in the last hour (e.g. git diff @{1.hour.ago}).
-# Note that if a branch is missing, then it assumes the current branch (so @{1.hour.ago}
-# refers to master@{1.hour.ago} if on the branch master.
-"""
-
 def json_prettify(json_data):
 	json_type = type(json_data).__name__
 	if "dict" == json_type:
@@ -1065,14 +993,26 @@ def match_on_json_condition(json, path, field_condition, debug=False):
 				return True
 		if field_condition == "no-value" and (path_type == "null" or path_value is None or len(path_value) == 0):
 			return True
-	#if not path_exists:
-	#	return False
+	if not path_exists:
+		return False
 
-	if field_condition.startswith("equal=") or field_condition.startswith("value=") or field_condition.startswith("not-equal=") or field_condition.startswith("equals=") or field_condition.startswith("not-equals="):
+	if field_condition.startswith("equals=") or field_condition.startswith("value=") or field_condition.startswith("not-equal=") or field_condition.startswith("equals=") or field_condition.startswith("not-equals="):
 		condition_value = field_condition.split("=")[1]
 		if not field_condition.startswith("not-") and condition_value == path_value:
 			return True
 		if field_condition.startswith("not-") and condition_value != path_value:
+			return True
+	if field_condition.startswith("startswith=") or field_condition.startswith("not-startswith=") or field_condition.startswith("begins=") or field_condition.startswith("not-begins=") or field_condition.startswith("starts=") or field_condition.startswith("not-starts="):
+		condition_value = field_condition.split("=")[1]
+		if not field_condition.startswith("not-") and path_value.lower().startswith(condition_value.lower()):
+			return True
+		if field_condition.startswith("not-") and not path_value.lower().startswith(condition_value.lower()):
+			return True
+	if field_condition.startswith("endswith=") or field_condition.startswith("not-endswith=") or field_condition.startswith("ends=") or field_condition.startswith("not-ends="):
+		condition_value = field_condition.split("=")[1]
+		if not field_condition.startswith("not-") and path_value.lower().endswith(condition_value.lower()):
+			return True
+		if field_condition.startswith("not-") and not path_value.lower().endswith(condition_value.lower()):
 			return True
 
 	if field_condition.startswith("contains=") or field_condition.startswith("not-contains=") or field_condition.startswith("has=") or field_condition.startswith("not-has="):
@@ -1095,14 +1035,30 @@ def match_on_json_condition(json, path, field_condition, debug=False):
 			print("%s(type: %s): %s, data.len: %s" % (field_condition, type(condition_value).__name__, condition_value, len(path_value)))
 		if type(condition_value).__name__ == "str" and condition_value.isnumeric():
 			condition_value = int(condition_value)
-			if field_condition.startswith("len=") and path_type != "null" and len(path_value) == condition_value:
-				return True
-			if field_condition.startswith("not-len=") and path_type != "null" and len(path_value) != condition_value:
-				return True
-			if field_condition.startswith("min-len=") and path_type != "null" and len(path_value) >= condition_value:
-				return True
-			if field_condition.startswith("max-len=") and path_type != "null" and len(path_value) <= condition_value:
-				return True
+		if field_condition.startswith("len=") and path_type != "null" and len(path_value) == condition_value:
+			return True
+		if field_condition.startswith("not-len=") and path_type != "null" and len(path_value) != condition_value:
+			return True
+		if field_condition.startswith("min-len=") and path_type != "null" and len(path_value) >= condition_value:
+			return True
+		if field_condition.startswith("max-len=") and path_type != "null" and len(path_value) <= condition_value:
+			return True
+	if field_condition.startswith("gt=") or field_condition.startswith("gte=") or field_condition.startswith("lt=") or field_condition.startswith("lte=") or field_condition.startswith("eq="):
+		condition_value = field_condition.split("=")[1].strip()
+		if debug and path_value is not None:
+			print("%s(type: %s): %s, data.len: %s" % (field_condition, type(condition_value).__name__, condition_value, len(path_value)))
+		if type(condition_value).__name__ == "str" and condition_value.isnumeric():
+			condition_value = int(condition_value)
+		if field_condition.startswith("gt=") and path_type != "null" and len(path_value) > condition_value:
+			return True
+		if field_condition.startswith("gte=") and path_type != "null" and len(path_value) >= condition_value:
+			return True
+		if field_condition.startswith("lt=") and path_type != "null" and len(path_value) < condition_value:
+			return True
+		if field_condition.startswith("lte=") and path_type != "null" and len(path_value) <= condition_value:
+			return True
+		if field_condition.startswith("eq=") and path_type != "null" and len(path_value) == condition_value:
+			return True
 	if debug:
 		print("***************************************\n%s\n***************************************" % path_value)
 	return False
