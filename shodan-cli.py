@@ -186,6 +186,7 @@ class ShodanSettings:
 		self.settings['Include_History'] = False
 		self.settings['No_DNS_Lookup'] = args.no_dns_lookup
 		self.settings['Out_No_Hostname'] = args.out_no_hostname
+		self.settings['Out_No_Vulns'] = args.out_no_vulns
 
 		self.settings['Verbose_Mode'] = False
 		self.settings['Out_Host_Only'] = False
@@ -1170,7 +1171,7 @@ def out_shodan(shodan):
 	print("Organization: %s" % host.org)
 	print("ASN: %s" % host.asn)
 	print("")
-	if host.has_vulns:
+	if host.has_vulns and not shodan.settings['Out_No_Vulns']:
 		print("Vulns: %s" % ', '.join(host.vulns))
 		print("")
 	#
@@ -1320,7 +1321,10 @@ def out_shodan(shodan):
 				print('\n'.join(serv_data))
 
 		if shodan.settings['Out_Service_JSON']:
-			serv_data = json.dumps(service._json, indent=4).split('\n')
+			service_json = service._json
+			if shodan.settings['Out_No_Vulns'] and "vulns" in service_json:
+				service_json.pop("vulns")
+			serv_data = json.dumps(service_json, indent=4).split('\n')
 			# clean up empty lines & prefix each line with '[*] '
 			serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
 			print('\n'.join(serv_data))
@@ -1984,6 +1988,7 @@ if __name__ == '__main__':
 	parser.add_argument('-cf', '--custom-field', dest='out_custom_fields', metavar="<condition>", help="Output field based on condition, see '-mc' for syntax")
 	parser.add_argument('-n', '--no-dns', dest='no_dns_lookup', action='store_true', help="Never do DNS resolution/Always resolve")
 	parser.add_argument('--hide-hostname', dest='out_no_hostname', action='store_true', help="Hide hostnames and domains from overview")
+	parser.add_argument('--hide-vulns', dest='out_no_vulns', action='store_true', help="Hide vulns information from overview and json output")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('--debug', dest='debug_mode', action='store_true', help="Enabled debug mode")
 
