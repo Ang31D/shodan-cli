@@ -1879,11 +1879,12 @@ if __name__ == '__main__':
 	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit, use '-v' for verbose output")
 	parser.add_argument('--account-profile', dest='out_account_profile', action='store_true', help="Output Shodan Account Profile info and exit, use '-v' for verbose output")
 	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
-	parser.add_argument('-t', dest='target', help='Host or IP address (or cache index) of the target to lookup')
+	parser.add_argument('-t', dest='target', help="Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets")
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
-	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target")
-	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data'")
-	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history" +
+	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target. Use '-v' to list available hostnames of the target." +
+		"\nUse '--host-only' to hide output of ports (and available hostnames if specified)")
+	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history when query shodan or show cached target info")
+	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data' in current directory" +
 		"\n\n")
 	parser.add_argument('-mp', '--match-ports', metavar="port[,port,...]", dest='match_on_ports', help='Match on port, comma-separated list of ports')
 	parser.add_argument('-ms', '--match-service', metavar="service[,service,...]", dest='match_on_modules', help='Match on service type, comma-separated list of services (ex. ssh,http,https)')
@@ -1894,14 +1895,6 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
 	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
 	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
-#	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>:[!|not-]<condition>', supports comma-separated list" +
-#		"\n" +
-#		"supported conditions:\n" +
-#		"- match on 'json path': exists, not-exists\n" +
-#		"- match on 'value': equals, not-equals, contains (has), not-contains, has-value, no-value, not-null\n" +
-#		"- match on 'type': type=<type>, not-type=<type>\n" +
-#		"- match on 'length': len=<length>, not-len=<length>, min-len=<length>, max-len=<length>\n" +
-#		"\n")
 	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[!|not-]<condition>[=<value>]]', supports comma-separated list" +
 		"\n" +
 		"supported conditions:\n" +
@@ -1914,12 +1907,13 @@ if __name__ == '__main__':
 		"- 'starts|begins', 'ends': match if value of returned <json-path> matches condition of <value> for 'str' & 'int'\n" +
 		"- 'len', 'min-len', 'max-len': match if length of returned <json-path> matches condition (same length, greater then equal or less then equal) of <value> for 'str', 'int', 'list', 'OrderedDict' & 'dict'\n" +
 		"- 'gt', 'gte', 'lt', 'lte', 'eq': match if number of returned <json-path> matches condition (greater then, greater equal then, less then, less equal then, equal) of <value>\n" +
-		"supported conditional negation operators: '!' or 'not-'; when prefixed match on negated condition ('false' as 'true' and vice verse)\n\texample: '_shodan:not-exists'\n" +
-		"default behaviours:\n" +
-		"By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter\n" +
-		"Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'\n" +
+		"supported conditional negation operators: '!' or 'not-'; when prefixed the condition match on negated condition ('false' as 'true' and vice verse)" +
+		"\n\texample: -mc '_shodan:!exists', -mc _shodan.module:not-contains=http" +
+		"\ndefault behaviours:\n" +
+		"- By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter\n" +
+		"- Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'\n" +
 		"\n")
-	parser.add_argument('--sort-date', dest='out_sort_by_scan_date', action='store_true', help="Output services by scan date")
+	parser.add_argument('--sort-date', dest='out_sort_by_scan_date', action='store_true', help="Output services by scan date, default port and scan date")
 	parser.add_argument('--head', metavar="num", dest='out_head_service_count', type=int, help="output first number of services")
 	parser.add_argument('--tail', metavar="num", dest='out_tail_service_count', type=int, help="output last number of services")
 	parser.add_argument('-d', '--service-data', dest='out_service_data', action='store_true', help="Output service details")
