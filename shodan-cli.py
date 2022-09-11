@@ -18,6 +18,7 @@ import re
 from support import RelativeDate, DateHelper
 from fnmatch import fnmatch
 from match_helper import Condition, Compare
+import base64
 
 
 def json_prettify(json_data):
@@ -129,6 +130,8 @@ class ShodanSettings:
 		self.settings['Out_Service_Module'] = False
 		self.settings['Out_Service_JSON'] = False
 		self.settings['Out_Custom_Fields'] = []
+		self.settings['Out_Custom_Fields_AS_Base64'] = args.out_custom_fields_as_base64
+		
 
 		self.settings['Match_On_Ports'] = []
 		self.settings['Match_On_Modules'] = []
@@ -908,6 +911,14 @@ def show_json_path_as_field(shodan, service):
 			#
 			if "dict" == path_type:
 				path_value = json_minify(path_value)
+				if shodan.settings['Out_Custom_Fields_AS_Base64']:
+					field_name = "%s (base64)" % field_name
+					try:
+						path_value = path_value.encode("ascii")
+						path_value = base64.b64encode(path_value)
+						path_value = path_value.decode("ascii")
+					except Exception as e:
+						path_value = "<failed to encode '%s' as base64>" % field_name
 			out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
 		print(out_data)
@@ -1307,11 +1318,11 @@ def filter_list_by_head_tail(shodan, data_list):
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
 	#if shodan.settings['Verbose_Mode']:
-	if not shodan.settings['Out_Host_Only']:
+	if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
 		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
 	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
 	#if shodan.settings['Verbose_Mode']:
-	if not shodan.settings['Out_Host_Only']:
+	if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
 		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
 
 	if shodan.settings['Flush_Cache']:
@@ -1355,7 +1366,7 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
-		if not shodan.settings['Out_Host_Only']:
+		if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
 			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
 				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
 			else:
@@ -1407,13 +1418,14 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
-		if not shodan.settings['Out_Host_Only']:
+		if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
 			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
 				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
 			else:
 				out_data = "%s\t" % (out_data)
-			host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
-			out_data = "%sPorts: %s" % (out_data, host_ports)
+			if not shodan.settings['Out_Host_Only']:
+				host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
+				out_data = "%sPorts: %s" % (out_data, host_ports)
 
 		if not match_cached_host_on_condition(shodan, host):
 			continue
@@ -1882,8 +1894,8 @@ if __name__ == '__main__':
 	parser.add_argument('-t', dest='target', help="Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets")
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
 	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target. Use '-v' to list available hostnames of the target." +
-		"\nUse '--host-only' to hide output of ports (and available hostnames if specified)")
-	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history when query shodan or show cached target info")
+		"\nUse '--host-only' to hide output of ports")
+	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history when query shodan or when viewing cached target if available")
 	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data' in current directory" +
 		"\n\n")
 	parser.add_argument('-mp', '--match-ports', metavar="port[,port,...]", dest='match_on_ports', help='Match on port, comma-separated list of ports')
@@ -1895,7 +1907,7 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
 	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
 	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
-	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[!|not-]<condition>[=<value>]]', supports comma-separated list" +
+	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list" +
 		"\n" +
 		"supported conditions:\n" +
 		"- 'exists': match if <json-path> exists\n" +
@@ -1937,6 +1949,7 @@ if __name__ == '__main__':
 	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information" +
 	"\n\n")
 	parser.add_argument('-cf', '--custom-field', dest='out_custom_fields', metavar="<condition>", help="Output field based on condition, see '-mc' for syntax")
+	parser.add_argument('--cf-b64', dest='out_custom_fields_as_base64', action='store_true', help="Output field based on condition as base 64 (for safe output)")
 	parser.add_argument('-n', '--no-dns', dest='no_dns_lookup', action='store_true', help="Never do DNS resolution/Always resolve")
 	parser.add_argument('--hide-hostname', dest='out_no_hostname', action='store_true', help="Hide hostnames and domains from overview")
 	parser.add_argument('--hide-vulns', dest='out_no_vulns', action='store_true', help="Hide vulns information from overview and json output")
