@@ -63,8 +63,8 @@ options:
                         supported conditional negation operators: '!' or 'not-'; when prefixed match on negated condition ('false' as 'true' and vice verse)
                                 example: '_shodan:not-exists'
                         default behaviours:
-                        By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter
-                        Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'
+                        - By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter
+                        - Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'
                         
   --sort-date           Output services by scan date
   --head num            output first number of services
