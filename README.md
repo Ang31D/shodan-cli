@@ -27,8 +27,8 @@ options:
   -t TARGET             Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets
   -c, --cache           Use cached data if exists or re-cache if '-O' is not specified.
   -L, --list-cache      List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target. Use '-v' to list available hostnames of the target.
-                        Use '--host-only' to hide output of ports (and available hostnames if specified)
-  -H, --history         Include host history when query shodan or show cached target info
+                        Use '--host-only' to hide output of ports
+  -H, --history         Include host history when query shodan or when viewing cached target if available
   --cache-dir <path>    define custom cache directory, default './shodan-data' in current directory
                         
   -mp port[,port,...], --match-ports port[,port,...]
@@ -50,7 +50,7 @@ options:
   -fH host[,host,...], --filter-hostname host[,host,...]
                         Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts
   -mc <condition>, --match-json <condition>
-                        Match on json condition; syntax '<json-path>[:[!|not-]<condition>[=<value>]]', supports comma-separated list
+                        Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list
                         supported conditions:
                         - 'exists': match if <json-path> exists
                         - 'is-null|null', 'is-empty|no-value', 'has-value': match on value of returned <json-path>
@@ -94,6 +94,7 @@ options:
                         
   -cf <condition>, --custom-field <condition>
                         Output field based on condition, see '-mc' for syntax
+  --cf-b64              Output field based on condition as base 64 (for safe output)
   -n, --no-dns          Never do DNS resolution/Always resolve
   --hide-hostname       Hide hostnames and domains from overview
   --hide-vulns          Hide vulns information from overview and json output
