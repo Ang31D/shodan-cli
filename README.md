@@ -49,12 +49,22 @@ options:
   -fH host[,host,...], --filter-hostname host[,host,...]
                         Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts
   -mc <condition>, --match-json <condition>
-                        Match on json condition; syntax '<json-path>:<condition>', supports comma-separated list
+                        Match on json condition; syntax '<json-path>[:[!|not-]<condition>[=<value>]]', supports comma-separated list
                         supported conditions:
-                        - match on 'json path': exists, not-exists
-                        - match on 'value': equals, not-equals, contains (has), not-contains, has-value, no-value, not-null
-                        - match on 'type': type=<type>, not-type=<type>
-                        - match on 'length': len=<length>, not-len=<length>, min-len=<length>, max-len=<length>
+                        - 'exists': match if <json-path> exists
+                        - 'is-null|null', 'is-empty|no-value', 'has-value': match on value of returned <json-path>
+                        - 'is-type|type': match if defined type (<value>) == type of returned <json-path> value
+                        - 'equals|value|is': match if <value> == value of returned <json-path>
+                        - 'contains': match if value of returned <json-path> contains <value>
+                        - 'has': match if <value> == value of returned <json-path> for 'list', 'OrderedDict' & 'dict' (json) 
+                        - 'starts|begins', 'ends': match if value of returned <json-path> matches condition of <value> for 'str' & 'int'
+                        - 'len', 'min-len', 'max-len': match if length of returned <json-path> matches condition (same length, greater then equal or less then equal) of <value> for 'str', 'int', 'list', 'OrderedDict' & 'dict'
+                        - 'gt', 'gte', 'lt', 'lte', 'eq': match if number of returned <json-path> matches condition (greater then, greater equal then, less then, less equal then, equal) of <value>
+                        supported conditional negation operators: '!' or 'not-'; when prefixed match on negated condition ('false' as 'true' and vice verse)
+                                example: '_shodan:not-exists'
+                        default behaviours:
+                        By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter
+                        Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'
                         
   --sort-date           Output services by scan date
   --head num            output first number of services
@@ -85,6 +95,7 @@ options:
                         Output field based on condition, see '-mc' for syntax
   -n, --no-dns          Never do DNS resolution/Always resolve
   --hide-hostname       Hide hostnames and domains from overview
+  --hide-vulns          Hide vulns information from overview and json output
   -v, --verbose         Enabled verbose mode
   --debug               Enabled debug mode
 ```
