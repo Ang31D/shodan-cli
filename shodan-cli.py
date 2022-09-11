@@ -961,6 +961,7 @@ def match_on_json_path_condition(json, path_condition, debug=False):
 	if debug:
 		print("-match_on_json_path_coidition() field_condition '%s'" % (field_condition))
 	negated_match = Condition.has_negation_operator(condition)
+	case_sensitive_match = Condition.is_case_sensitive(condition)
 	condition = Condition.strip_negation_operator(condition)
 	condition = condition.lower()
 
@@ -992,7 +993,7 @@ def match_on_json_path_condition(json, path_condition, debug=False):
 		return Compare.is_type(path_value, condition_value, negated_match)
 
 	if Condition.EQUALS == condition or Condition.VALUE == condition or Condition.IS == condition:
-		return Compare.equals(path_value, condition_value, negated_match)
+		return Compare.equals(path_value, condition_value, case_sensitive_match, negated_match)
 
 	if Condition.CONTAINS == condition:
 		return Compare.contains(path_value, condition_value, negated_match)
@@ -1893,13 +1894,30 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
 	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
 	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
-	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>:[!|not-]<condition>', supports comma-separated list" +
+#	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>:[!|not-]<condition>', supports comma-separated list" +
+#		"\n" +
+#		"supported conditions:\n" +
+#		"- match on 'json path': exists, not-exists\n" +
+#		"- match on 'value': equals, not-equals, contains (has), not-contains, has-value, no-value, not-null\n" +
+#		"- match on 'type': type=<type>, not-type=<type>\n" +
+#		"- match on 'length': len=<length>, not-len=<length>, min-len=<length>, max-len=<length>\n" +
+#		"\n")
+	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[!|not-]<condition>[=<value>]]', supports comma-separated list" +
 		"\n" +
 		"supported conditions:\n" +
-		"- match on 'json path': exists, not-exists\n" +
-		"- match on 'value': equals, not-equals, contains (has), not-contains, has-value, no-value, not-null\n" +
-		"- match on 'type': type=<type>, not-type=<type>\n" +
-		"- match on 'length': len=<length>, not-len=<length>, min-len=<length>, max-len=<length>\n" +
+		"- 'exists': match if <json-path> exists\n" +
+		"- 'is-null|null', 'is-empty|no-value', 'has-value': match on value of returned <json-path>\n" +
+		"- 'is-type|type': match if defined type (<value>) == type of returned <json-path> value\n" +
+		"- 'equals|value|is': match if <value> == value of returned <json-path>\n" +
+		"- 'contains': match if value of returned <json-path> contains <value>\n" +
+		"- 'has': match if <value> == value of returned <json-path> for 'list', 'OrderedDict' & 'dict' (json) \n" +
+		"- 'starts|begins', 'ends': match if value of returned <json-path> matches condition of <value> for 'str' & 'int'\n" +
+		"- 'len', 'min-len', 'max-len': match if length of returned <json-path> matches condition (same length, greater then equal or less then equal) of <value> for 'str', 'int', 'list', 'OrderedDict' & 'dict'\n" +
+		"- 'gt', 'gte', 'lt', 'lte', 'eq': match if number of returned <json-path> matches condition (greater then, greater equal then, less then, less equal then, equal) of <value>\n" +
+		"supported conditional negation operators: '!' or 'not-'; when prefixed match on negated condition ('false' as 'true' and vice verse)\n\texample: '_shodan:not-exists'\n" +
+		"default behaviours:\n" +
+		"By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter\n" +
+		"Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'\n" +
 		"\n")
 	parser.add_argument('--sort-date', dest='out_sort_by_scan_date', action='store_true', help="Output services by scan date")
 	parser.add_argument('--head', metavar="num", dest='out_head_service_count', type=int, help="output first number of services")
