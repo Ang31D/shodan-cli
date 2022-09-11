@@ -13,6 +13,8 @@ The python script `core.py` is a poc to detect content in json files based on ru
 <br>
 Sample hosts from shodan `91.195.240.94` , `198.98.62.253`, `188.166.148.225`
 
+Note: we should implement `async` to support callbacks (I think). Never used `async` but think that is what it´s used for.
+
 ## usage
 
 ```
