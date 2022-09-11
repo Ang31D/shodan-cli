@@ -17,6 +17,7 @@ import socket
 import re
 from support import RelativeDate, DateHelper
 from fnmatch import fnmatch
+from match_helper import Condition, Compare
 
 
 def json_prettify(json_data):
@@ -447,7 +448,8 @@ class Port_Service:
 	def __init__(self, json_data):
 		self._json = json_data
 		self.port = int(self._json['port'])
-		self.protocol = self._json['transport']
+		#self.protocol = self._json['transport']
+		self.protocol = '?' if 'transport' not in self._json else self._json['transport']
 		self.timestamp = '' if 'timestamp' not in self._json else self._json['timestamp']
 		self.scan_date = ''
 		if len(self.timestamp) > 0:
@@ -504,7 +506,8 @@ class Port_Service:
 	def module_name(self):
 		if self.has_module:
 			return self._json["_shodan"]["module"]
-		return None
+		#return None
+		return 'null'
 	@property
 	def has_module_data(self):
 		if self.get_module_data() is not None:
@@ -805,7 +808,7 @@ def match_on_service(shodan, service):
 			return False
 	if len(shodan.settings['Match_On_Modules']) > 0:
 		module_name = service.module_name
-		if '-' in module_name:
+		if module_name is not None and '-' in module_name:
 			module_name = module_name.split('-')[0]
 		if service.module_name not in shodan.settings['Match_On_Modules'] and module_name not in shodan.settings['Match_On_Modules']:
 			return False
@@ -838,6 +841,9 @@ def get_json_path(json_dict, path):
 	json_data = json_dict
 
 	fields = path.split('.')
+	# // override if '|' is used as path separator instead
+	if "|" in path:
+		fields = path.split('|')
 	last_field_index = len(fields)-1
 
 	for i in range(len(fields)):
@@ -845,6 +851,22 @@ def get_json_path(json_dict, path):
 		field_exists = field in json_data
 
 		if not field_exists:
+			if last_field_index-1 != i:
+				return False, None
+			if "list" == type(json_data).__name__:
+				result_data = []
+				for item in json_data:
+					if field in item:
+						remove_fields = []
+						for other_field in item:
+							if other_field != field:
+								remove_fields.append(other_field)
+						for other_field in remove_fields:
+							item.pop(other_field)
+						#result_data.append("{'%s': '%s'}" % (field, item[field]))
+						result_data.append(item)
+				if len(result_data) > 0:
+					return True, json_prettify(result_data)
 			return False, None
 		
 		json_data = json_data[field]
@@ -853,212 +875,167 @@ def get_json_path(json_dict, path):
 			return True, json_data
 	return False, None
 def show_json_path_as_field(shodan, service):
-	fill_prefix = "\t\t\t\t"
-	fields = []
-	field = OrderedDict()
-	field["path"] = "_shodan.module"
-	field["name"] = "Section - WEB Info"
-	field["conditions"] = ["_shodan.module:value=http"]
-	field["value"] = "static:WEB Info"
-	field["prefix"] = ""
-	fields.append(field)
-
-	field = OrderedDict()
-	field["path"] = "_shodan.options.hostname"
-	field["name"] = "Scanned Host"
-	field["conditions"] = ["_shodan.module:value=http", "_shodan.options.hostname:exists", "_shodan.options.hostname:has-value"]
-	field["value"] = "json:path"
-	field["prefix"] = "\t"
-	fields.append(field)
-
-	field = OrderedDict()
-	field["path"] = "http.title"
-	field["name"] = "Page Title"
-	field["conditions"] = ["_shodan.module:value=http", "http.title:exists", "http.title:has-value"]
-	field["value"] = "json:path"
-	field["prefix"] = "\t"
-	fields.append(field)
-
-	for field in fields:
-		all_condition_match = True
-		for custom in field["conditions"]:
-			path = custom.split(':')[0].strip().lower()
-			field_condition = custom.split(':')[1].strip().lower()
-			
-			if not match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
-				all_condition_match = False
-		if all_condition_match:
-			if field["value"].startswith("static:"):
-				path_exists = True
-				#path_value = field["value"].split(":")[1]
-				path_value = "%s" % field["value"].split(":")[1]
-			elif field["value"].startswith("json:"):
-				path_exists, path_value = get_json_path(service._json, field["path"])
-				path_value = "%s: %s" % (field["name"], path_value)
-			if path_exists and shodan.settings["Verbose_Mode"]:
-				#print("%s***** %s%s(%s): %s" % (fill_prefix, field["prefix"], field["name"], field["path"], path_value))
-				print("%s***** %s%s" % (fill_prefix, field["prefix"], path_value))
-	
 	if len(shodan.settings['Out_Custom_Fields']) == 0:
 		return
-	#fill_prefix = "\t\t\t\t\t"
 	fill_prefix = "\t\t\t\t"
-	#path_to_field["fields"] = []
-	#field = OrderedDict()
-	#path_to_field["fields"][]
-	path_to_field = OrderedDict()
-	path_to_field["_shodan.options.hostname"] = "hostname"
-	path_to_field["http.title"] = "Page Title"
-	conditions = OrderedDict()
-	conditions["path"] = "exists"
-	conditions["value"] = "has-value"
+	# // experimental, translate (change) output field from path to custom name
+	translate_path_as_out_field_name = OrderedDict()
+	#translate_path_as_out_field_name["_shodan.options.hostname"] = "hostname"
+	#translate_path_as_out_field_name["http.title"] = "Page Title"
+	#translate_path_as_out_field_name["http.host"] = "Host header"
+	#translate_path_as_out_field_name["hostnames"] = "hostname list"
 	found_path = False
 	
 	out_data = ""
 	for custom in shodan.settings['Out_Custom_Fields']:
-		if ':' not in custom:
-			custom = "%s:exists" % custom
-		if ':' in custom and len(custom.split(':')) == 2:
-			path = custom.split(':')[0].strip().lower()
-			field_condition = custom.split(':')[1].strip().lower()
-
-			if not match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
-				continue
-
-			path_exists, path_value = get_json_path(service._json, path)
-			path_type = type(path_value).__name__
+		if not match_on_json_path_condition(service._json, custom, shodan.settings['Debug_Mode']):
+			continue
+		#
+		path = set_default_json_path_condition(custom).split(':')[0].strip()
+		path_exists, path_value = get_json_path(service._json, path)
+		path_type = type(path_value).__name__
+		if shodan.settings['Debug_Mode']:
 			print("json-path - path: %s, exists: %s, type: %s" % (path_type, path_exists, path))
-
-			if path_exists:
-				found_path = True
-				if len(out_data) > 1:
-					out_data = "%s\n" % out_data
-				field_name = path
-				if field_name in path_to_field:
-					field_name = path_to_field[path]
-				
-				if "dict" == path_type:
-					path_value = json_minify(path_value)
-				out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
+		#
+		if path_exists:
+			found_path = True
+			if len(out_data) > 1:
+				out_data = "%s\n" % out_data
+			
+			field_name = path
+			if field_name in translate_path_as_out_field_name:
+				field_name = translate_path_as_out_field_name[path]
+			#
+			if "dict" == path_type:
+				path_value = json_minify(path_value)
+			out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
-		#print("%s" % ("*" * 39 * 2))
 		print(out_data)
-		#print("%s" % ("*" * 39 * 2))
 
 def match_service_on_custom_conditions(shodan, service):
 	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
 		return True
 
 	for custom_condition in shodan.settings['Match_On_Custom_Conditions']:
-		if ':' not in custom_condition:
-			custom_condition = "%s:exists" % custom_condition
-		if ':' in custom_condition and len(custom_condition.split(':')) == 2:
-			path = custom_condition.split(':')[0].strip().lower()
-			field_condition = custom_condition.split(':')[1].strip().lower()
-
-			#if match_on_json_condition(shodan, service._json, path, field_condition):
-			if not match_on_json_condition(service._json, path, field_condition, shodan.settings['Debug_Mode']):
-				return False
+		path_exists, path_value = get_json_path(service._json, set_default_json_path_condition(custom_condition).split(":")[0].strip())
+		if not match_on_json_path_condition(service._json, custom_condition, shodan.settings['Debug_Mode']):
+			return False
 	return True
-def match_on_json_condition(json, path, field_condition, debug=False):
+def set_default_json_path_condition(path_condition):
+	path = None
+	condition = None
+	if ':' not in path_condition:
+		if '=' in path_condition:
+			if len(path_condition.split('=')) == 2:
+				path = path_condition.split('=')[0].strip()
+				condition_value = path_condition.split('=')[1].strip()
+				condition = "%s=%s" % (Condition.EQUALS, condition_value)
+		else:
+			path = path_condition
+			condition = Condition.EXISTS
+
+	if path is not None and condition is not None:
+		return "%s:%s" % (path, condition)
+	return path_condition
+def match_on_json_path_condition(json, path_condition, debug=False):
+	path_condition = set_default_json_path_condition(path_condition)
+	if ':' not in path_condition or len(path_condition.split(':')) != 2:
+		if debug:
+			print("-match_on_json_path_condition() : invalid path_condition format '%s'" % (path_condition))
+		return False
+
+	path = path_condition.split(':')[0].strip()
+	field_condition = path_condition.split(':')[1].strip()
+
+	condition_value = None
+	condition = field_condition
+	if "=" in condition:
+		condition_value = condition.split("=")[1]
+		condition = condition.split("=")[0]
+	
+	if debug:
+		print("-match_on_json_path_coidition() field_condition '%s'" % (field_condition))
+	negated_match = Condition.has_negation_operator(condition)
+	condition = Condition.strip_negation_operator(condition)
+	condition = condition.lower()
+
 	path_exists, path_value = get_json_path(json, path)
 
 	path_type = type(path_value).__name__
-	#if path_type == "NoneType" or path_type is None:
 	if path_type == "NoneType" or path_value is None:
 		path_type = "null"
 	elif path_type == "dict":
 		path_type = "json"
-	elif path_type == "bool":
-		if field_condition.startswith("value="):
-			if path_value:
-				path_value = "true"
-			else:
-				path_value = "false"
-			#path_type = str(path_value).lower()
+
 	if debug:
-		print("-match_on_json_condition() condition '%s:%s', path.exists: %s, data.type: %s" % (path, field_condition, path_exists, path_type))
+		print("-match_on_json_path_condition() condition '%s:%s', path.exists: %s, path_value.type: %s\n#### %s" % (path, field_condition, path_exists, path_type, path_value))
 
-	if field_condition == "exists" or field_condition == "not-exists" or field_condition == "exist" or field_condition == "not-exist":
-		if field_condition.startswith("exist") and path_exists:
-			return True
-		if field_condition.startswith("not-exist") and not path_exists:
-			return True
-	if field_condition == "has-value" or field_condition == "no-value" or field_condition == "not-null":
-		#if (field_condition == "has-value" or field_condition == "not-null") and path_type != "null" and path_type != "bool" and path_value is not None and len(path_value) != 0:
-		if (field_condition == "has-value" or field_condition == "not-null") and path_type != "null" and path_type != "bool" and path_value is not None:
-			if (path_type == "str" or path_type == "list") and len(path_value) != 0:
-				return True
-			else:
-				return True
-		if field_condition == "no-value" and (path_type == "null" or path_value is None or len(path_value) == 0):
-			return True
-	if not path_exists:
-		return False
+	if Condition.EXISTS == condition:
+		if negated_match:
+			return not path_exists
+		return path_exists
 
-	if field_condition.startswith("equals=") or field_condition.startswith("value=") or field_condition.startswith("not-equal=") or field_condition.startswith("equals=") or field_condition.startswith("not-equals="):
-		condition_value = field_condition.split("=")[1]
-		if not field_condition.startswith("not-") and condition_value == path_value:
-			return True
-		if field_condition.startswith("not-") and condition_value != path_value:
-			return True
-	if field_condition.startswith("startswith=") or field_condition.startswith("not-startswith=") or field_condition.startswith("begins=") or field_condition.startswith("not-begins=") or field_condition.startswith("starts=") or field_condition.startswith("not-starts="):
-		condition_value = field_condition.split("=")[1]
-		if not field_condition.startswith("not-") and path_value.lower().startswith(condition_value.lower()):
-			return True
-		if field_condition.startswith("not-") and not path_value.lower().startswith(condition_value.lower()):
-			return True
-	if field_condition.startswith("endswith=") or field_condition.startswith("not-endswith=") or field_condition.startswith("ends=") or field_condition.startswith("not-ends="):
-		condition_value = field_condition.split("=")[1]
-		if not field_condition.startswith("not-") and path_value.lower().endswith(condition_value.lower()):
-			return True
-		if field_condition.startswith("not-") and not path_value.lower().endswith(condition_value.lower()):
-			return True
+	if Condition.HAS_VALUE == condition:
+		return Compare.has_value(path_value, negated_match)
 
-	if field_condition.startswith("contains=") or field_condition.startswith("not-contains=") or field_condition.startswith("has=") or field_condition.startswith("not-has="):
-		condition_value = field_condition.split("=")[1]
-		if not field_condition.startswith("not-") and path_type == "str" and condition_value in path_value.lower():
-			return True
-		if field_condition.startswith("not-") and path_type == "str" and condition_value not in path_value.lower():
-			return True
+	if Condition.IS_EMPTY == condition or Condition.NO_VALUE == condition:
+		return Compare.is_empty(path_value, negated_match)
 
-	if field_condition.startswith("type=") or field_condition.startswith("not-type="):
-		condition_value = field_condition.split("=")[1]
-		if not field_condition.startswith("not-") and condition_value == path_type:
-			return True
-		if field_condition.startswith("not-") and condition_value != path_type:
-			return True
+	if Condition.IS_NULL == condition or Condition.NULL == condition:
+		return Compare.is_null(path_value, negated_match)
+	if Condition.IS_TYPE == condition or Condition.TYPE == condition:
+		return Compare.is_type(path_value, condition_value, negated_match)
 
-	if field_condition.startswith("len=") or field_condition.startswith("not-len=") or field_condition.startswith("min-len=") or field_condition.startswith("max-len="):
-		condition_value = field_condition.split("=")[1].strip()
-		if debug and path_value is not None:
-			print("%s(type: %s): %s, data.len: %s" % (field_condition, type(condition_value).__name__, condition_value, len(path_value)))
-		if type(condition_value).__name__ == "str" and condition_value.isnumeric():
-			condition_value = int(condition_value)
-		if field_condition.startswith("len=") and path_type != "null" and len(path_value) == condition_value:
-			return True
-		if field_condition.startswith("not-len=") and path_type != "null" and len(path_value) != condition_value:
-			return True
-		if field_condition.startswith("min-len=") and path_type != "null" and len(path_value) >= condition_value:
-			return True
-		if field_condition.startswith("max-len=") and path_type != "null" and len(path_value) <= condition_value:
-			return True
-	if field_condition.startswith("gt=") or field_condition.startswith("gte=") or field_condition.startswith("lt=") or field_condition.startswith("lte=") or field_condition.startswith("eq="):
-		condition_value = field_condition.split("=")[1].strip()
-		if debug and path_value is not None:
-			print("%s(type: %s): %s, data.len: %s" % (field_condition, type(condition_value).__name__, condition_value, len(path_value)))
-		if type(condition_value).__name__ == "str" and condition_value.isnumeric():
-			condition_value = int(condition_value)
-		if field_condition.startswith("gt=") and path_type != "null" and len(path_value) > condition_value:
-			return True
-		if field_condition.startswith("gte=") and path_type != "null" and len(path_value) >= condition_value:
-			return True
-		if field_condition.startswith("lt=") and path_type != "null" and len(path_value) < condition_value:
-			return True
-		if field_condition.startswith("lte=") and path_type != "null" and len(path_value) <= condition_value:
-			return True
-		if field_condition.startswith("eq=") and path_type != "null" and len(path_value) == condition_value:
-			return True
+	if Condition.EQUALS == condition or Condition.VALUE == condition or Condition.IS == condition:
+		return Compare.equals(path_value, condition_value, negated_match)
+
+	if Condition.CONTAINS == condition:
+		return Compare.contains(path_value, condition_value, negated_match)
+	if Condition.HAS == condition:
+		return Compare.has(path_value, condition_value, negated_match)
+
+	if Condition.STARTS == condition or Condition.BEGINS == condition:
+		return Compare.starts(path_value, condition_value, negated_match)
+
+	if Condition.ENDS == condition:
+		return Compare.ends(path_value, condition_value, negated_match)
+
+	if Condition.LEN == condition:
+		if path_exists and path_value is not None:
+			return Compare.is_length(path_value, condition_value, negated_match)
+
+	if Condition.MIN_LEN == condition:
+		if path_exists and path_value is not None:
+			return Compare.min_length(path_value, condition_value, negated_match)
+
+	if Condition.MAX_LEN == condition:
+		if path_exists and path_value is not None:
+			return Compare.max_length(path_value, condition_value, negated_match)
+
+	if Condition.NUM_GREATER_THEN == condition:
+		if path_exists and path_value is not None:
+			return Compare.num_is_greater_then(path_value, condition_value, negated_match)
+
+	if Condition.NUM_GREATER_EQUAL_LTHEN == condition:
+		if path_exists and path_value is not None:
+			return Compare.num_is_greater_equal_then(path_value, condition_value, negated_match)
+
+	if Condition.NUM_LESS_THEN == condition:
+		if path_exists and path_value is not None:
+			return Compare.num_is_less_then(path_value, condition_value, negated_match)
+
+	if Condition.NUM_LESS_EQUAL_THEN == condition:
+		if path_exists and path_value is not None:
+			return Compare.num_is_less_equal_then(path_value, condition_value, negated_match)
+
+	if Condition.NUM_EQUAL == condition:
+		return Compare.num_is_equal(path_value, condition_value, negated_match)
+
+	if Condition.REGEX == condition:
+		if path_exists and path_value is not None:
+			return Compare.match_on_regex(path_value, condition_value, negated_match)
+	return False
+
 	if debug:
 		print("***************************************\n%s\n***************************************" % path_value)
 	return False
@@ -1288,7 +1265,8 @@ def out_shodan(shodan):
 		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
 			print("")
 
-		show_json_path_as_field(shodan, service)
+		if len(shodan.settings['Out_Custom_Fields']) > 0:
+			show_json_path_as_field(shodan, service)
 
 def filter_list_by_head_tail(shodan, data_list):
 	head_arg_index = get_arg_index(sys.argv, "--head")
