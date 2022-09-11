@@ -89,6 +89,18 @@ class Condition:
 			return True
 		return False
 	@staticmethod
+	def is_case_sensitive(condition):
+		if 'str' != type(condition).__name__:
+			return False
+		if len(condition) == 0:
+			return False
+		if Condition.has_negation_operator(condition):
+			if Condition.strip_negation_operator(condition)[0].isupper():
+				return True
+		elif condition[0].isupper():
+				return True
+		return False
+	@staticmethod
 	def strip_negation_operator(condition):
 		if not Condition.has_negation_operator(condition):
 			return condition
@@ -364,7 +376,7 @@ class Compare:
 			return False
 		return False
 	@staticmethod
-	def equals(match_on, value, negated_match=False):
+	def equals(match_on, value, case_sensitive_match=False, negated_match=False):
 		if "bool" == type(match_on).__name__ and "str" == type(value).__name__:
 			if ("true" == value.lower() and match_on) or ("false" == value.lower() and not match_on):
 				if negated_match:
@@ -382,7 +394,12 @@ class Compare:
 				return True
 			return False
 		if "str" == type(match_on).__name__ and "str" == type(value).__name__:
-			if match_on.lower() == value.lower():
+			if case_sensitive_match:
+				if match_on == value:
+					if negated_match:
+						return False
+					return True
+			elif match_on.lower() == value.lower():
 				if negated_match:
 					return False
 				return True
