@@ -933,6 +933,11 @@ def set_default_json_path_condition(path_condition):
 		else:
 			path = path_condition
 			condition = Condition.EXISTS
+	else:
+		if len(path_condition.split(':')) == 2:
+			if "not" == path_condition.split(':')[1].strip().lower() or "!" == path_condition.split(':')[1].strip():
+				path = path_condition.split(':')[0].strip()
+				condition = "not-%s" % Condition.EXISTS
 
 	if path is not None and condition is not None:
 		return "%s:%s" % (path, condition)
@@ -1888,7 +1893,7 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
 	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
 	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
-	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>:<condition>', supports comma-separated list" +
+	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>:[!|not-]<condition>', supports comma-separated list" +
 		"\n" +
 		"supported conditions:\n" +
 		"- match on 'json path': exists, not-exists\n" +
