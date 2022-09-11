@@ -24,11 +24,12 @@ options:
   -h, --help            show this help message and exit
   --api-info            Output API info and exit, use '-v' for verbose output
   --account-profile     Output Shodan Account Profile info and exit, use '-v' for verbose output
-  -t TARGET             Host or IP address (or cache index) of the target to lookup
+  -t TARGET             Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets
   -c, --cache           Use cached data if exists or re-cache if '-O' is not specified.
-  -L, --list-cache      List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target
-  --cache-dir <path>    define custom cache directory, default './shodan-data'
-  -H, --history         Include host history
+  -L, --list-cache      List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target. Use '-v' to list available hostnames of the target.
+                        Use '--host-only' to hide output of ports (and available hostnames if specified)
+  -H, --history         Include host history when query shodan or show cached target info
+  --cache-dir <path>    define custom cache directory, default './shodan-data' in current directory
                         
   -mp port[,port,...], --match-ports port[,port,...]
                         Match on port, comma-separated list of ports
@@ -60,13 +61,13 @@ options:
                         - 'starts|begins', 'ends': match if value of returned <json-path> matches condition of <value> for 'str' & 'int'
                         - 'len', 'min-len', 'max-len': match if length of returned <json-path> matches condition (same length, greater then equal or less then equal) of <value> for 'str', 'int', 'list', 'OrderedDict' & 'dict'
                         - 'gt', 'gte', 'lt', 'lte', 'eq': match if number of returned <json-path> matches condition (greater then, greater equal then, less then, less equal then, equal) of <value>
-                        supported conditional negation operators: '!' or 'not-'; when prefixed match on negated condition ('false' as 'true' and vice verse)
-                                example: '_shodan:not-exists'
+                        supported conditional negation operators: '!' or 'not-'; when prefixed the condition match on negated condition ('false' as 'true' and vice verse)
+                                example: -mc '_shodan:!exists', -mc _shodan.module:not-contains=http
                         default behaviours:
                         - By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter
                         - Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'
                         
-  --sort-date           Output services by scan date
+  --sort-date           Output services by scan date, default port and scan date
   --head num            output first number of services
   --tail num            output last number of services
   -d, --service-data    Output service details
