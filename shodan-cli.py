@@ -922,7 +922,15 @@ def show_json_path_as_field(shodan, service):
 			out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
 		print(out_data)
-
+def match_service_on_custom_conditions_ex(shodan, service, custom_conditions):
+	if len(custom_conditions) == 0:
+		return True
+	
+	for custom_condition in custom_conditions:
+		path_exists, path_value = get_json_path(service._json, set_default_json_path_condition(custom_condition).split(":")[0].strip())
+		if not match_on_json_path_condition(service._json, custom_condition, shodan.settings['Debug_Mode']):
+			return False
+	return True
 def match_service_on_custom_conditions(shodan, service):
 	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
 		return True
@@ -1146,6 +1154,14 @@ def out_shodan(shodan):
 		
 	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
 
+	threat_custom_conditions = OrderedDict()
+	threat_custom_conditions["Cobalt Strike - Malleable C2 Profile"] = 'cobalt_strike_beacon'
+	threat_custom_conditions["Potential cobaltstrike - Team Server (default port)"] = 'port=50050'
+	threat_custom_conditions["Potential cobaltstrike - Team Server (by known data)"] = 'data=\u0015\u0003\u0003\u0000\u0002\u0002\n'
+	threat_custom_conditions["Potential cobaltstrike (http-headers)"] = 'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'
+	threat_custom_conditions["Possible 'Tor' by known jarm hash"] = 'ssl.jarm=2ad2ad16d2ad2ad00042d42d000000332dc9cd7d90589195193c8bb05d84fa,hash=0'
+	threat_custom_conditions["Tag: Tor"] = 'tags:has=tor'
+
 	for service in filtered_services: 
 		# // output service overview
 		fill_prefix = 1
@@ -1182,7 +1198,16 @@ def out_shodan(shodan):
 			print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
 			if service.has_tags:
 				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
+
+			#custom_conditions = 'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'.split(",")
+			for threat_name in threat_custom_conditions:
+				threat_custom_condition = threat_custom_conditions[threat_name].split(",")
+				if match_service_on_custom_conditions_ex(shodan, service, threat_custom_condition):
+					#print("%s! %s" % (fill_prefix, "potential cobaltstrike (http-headers)"))
+					print("%s! %s" % (fill_prefix, threat_name))
+
 			print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
+
 			# v-- [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
 			#if service.product.is_cobaltstrike:
 			#	print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
@@ -1440,8 +1465,8 @@ def list_cache(shodan, target=None):
 def match_cached_host_on_condition(shodan, host):
 	if not match_on_cached_host(shodan, host):
 		return False
-	if filter_out_cached_host(shodan, host):
-		return False
+	#if filter_out_cached_host(shodan, host):
+	#	return False
 
 	return True
 def match_on_cached_host(shodan, host):
@@ -1450,6 +1475,13 @@ def match_on_cached_host(shodan, host):
 		for port in host.host_ports:
 			if port in shodan.settings['Match_On_Ports']:
 				return True
+		return False
+	found_match = False
+	for service in host.services:
+		# filter in/out based on condition
+		if match_service_on_condition(shodan, service):
+			found_match = True
+	if not found_match:
 		return False
 	return True
 def filter_out_cached_host(shodan, host):
