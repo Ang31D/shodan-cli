@@ -572,7 +572,7 @@ class Compare:
 		if "dict" == type(match_on).__name__:
 			data = str(json.dumps(match_on))
 		try:
-			if re.match(pattern, data):
+			if re.search(pattern, data):
 				if negated_match:
 					return False
 				return True
