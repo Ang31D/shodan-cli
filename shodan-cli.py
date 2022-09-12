@@ -1317,12 +1317,10 @@ def filter_list_by_head_tail(shodan, data_list):
 
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
-	#if shodan.settings['Verbose_Mode']:
-	if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode']:
 		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
 	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
-	#if shodan.settings['Verbose_Mode']:
-	if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode']:
 		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
 
 	if shodan.settings['Flush_Cache']:
@@ -1330,7 +1328,6 @@ def list_cache(shodan, target=None):
 
 	if target is not None:
 		print(headers)
-		#if target.isnumeric():
 		if shodan._target_is_cache_index(target):
 			target = shodan._get_target_by_cache_index(target)
 			cache_file = shodan._get_out_path(shodan._target_as_out_file(target))
@@ -1366,13 +1363,16 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
-		if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
-			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
-				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
+		if shodan.settings['Verbose_Mode']:
+			if len(host.hostnames) > 0:
+				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
+				if not shodan.settings['Out_Host_Only']:
+					out_data = "%s / " % (out_data)
 			else:
 				out_data = "%s\t" % (out_data)
-			host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
-			out_data = "%sPorts: %s" % (out_data, host_ports)
+			if not shodan.settings['Out_Host_Only']:
+				host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
+				out_data = "%sPorts: %s" % (out_data, host_ports)
 			
 		print(out_data)
 		return
@@ -1418,9 +1418,12 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
-		if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
-			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
-				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
+		if shodan.settings['Verbose_Mode']:
+			if len(host.hostnames) > 0:
+				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
+				if not shodan.settings['Out_Host_Only']:
+					if not shodan.settings['Out_Host_Only']:
+						out_data = "%s / " % (out_data)
 			else:
 				out_data = "%s\t" % (out_data)
 			if not shodan.settings['Out_Host_Only']:
@@ -1429,7 +1432,6 @@ def list_cache(shodan, target=None):
 
 		if not match_cached_host_on_condition(shodan, host):
 			continue
-		#print(out_data)
 		out_cache_list.append(out_data)
 	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
 	for out_data in out_cache_list:
