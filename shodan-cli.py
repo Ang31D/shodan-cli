@@ -1364,7 +1364,7 @@ def list_cache(shodan, target=None):
 			out_data = "%s\t" % out_data
 
 		if shodan.settings['Verbose_Mode']:
-			if len(host.hostnames) > 0:
+			if len(host.hostnames) > 0 and not shodan.settings['Out_No_Hostname']:
 				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
 				if not shodan.settings['Out_Host_Only']:
 					out_data = "%s / " % (out_data)
@@ -1419,7 +1419,7 @@ def list_cache(shodan, target=None):
 			out_data = "%s\t" % out_data
 
 		if shodan.settings['Verbose_Mode']:
-			if len(host.hostnames) > 0:
+			if len(host.hostnames) > 0 and not shodan.settings['Out_No_Hostname']:
 				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
 				if not shodan.settings['Out_Host_Only']:
 					if not shodan.settings['Out_Host_Only']:
@@ -1895,8 +1895,8 @@ if __name__ == '__main__':
 	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
 	parser.add_argument('-t', dest='target', help="Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets")
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
-	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target. Use '-v' to list available hostnames of the target." +
-		"\nUse '--host-only' to hide output of ports")
+	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List an overview of cached hosts and exit. Use '-F' to re-cache and '-t' for specific target. Use '-v' to list available ports and hostnames of the target." +
+		"\nUse '--host-only' to only show hostnames in verbose mode ('-v'), '--hide-hostname' to hide hostnames in verbose mode ('-v')")
 	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history when query shodan or when viewing cached target if available")
 	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data' in current directory" +
 		"\n\n")
