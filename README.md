@@ -5,7 +5,9 @@ Extract interesting information regarding a host from shodan using the host api.
 <br>
 The python script `shodan-cli.py` utilizes the shodan api ([https://shodan.readthedocs.io/](https://shodan.readthedocs.io/)) to fetch (cache down) host information scanned by shodan.
 <br>
-We can choose to fetch all historical data for the host or just the latest scan. From there we, filter and show host services information.
+We can choose to fetch all historical data for the host or just the latest scan. From there we, filter and show host service informations.
+<br>
+Refer to [https://datapedia.shodan.io/](https://datapedia.shodan.io/) for a description of the different fields.
 <br>
 <br>
 The python script `core.py` is a poc to detect content in json files based on rule condition(s) and to show templated output based on matched conditions.
