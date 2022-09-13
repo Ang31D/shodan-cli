@@ -15,6 +15,27 @@ The python script `core.py` is a poc to detect content in json files based on ru
 <br>
 Sample hosts from shodan `91.195.240.94` , `198.98.62.253`, `188.166.148.225`
 
+TODO
+
+Expand arguments for threat rules
+
+`Example`
+
+```
+* Cobalt Strike - Malleable C2 Profile
+	'cobalt_strike_beacon'
+* Potential cobaltstrike - Team Server (default port)
+	'port=50050'
+* Potential cobaltstrike - Team Server (by known data)
+	'data:regex=\u0015\u0003\u0003\u0000\u0002\u0002\n'
+* Potential cobaltstrike (http-headers)
+	'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'
+* Possible 'Tor' by known jarm hash
+	'ssl.jarm=2ad2ad16d2ad2ad00042d42d000000332dc9cd7d90589195193c8bb05d84fa,hash=0'
+* Tag: Tor
+	'tags:has=tor'
+```
+
 Note: we should implement `async` to support callbacks (I think). Never used `async` but think that is what it´s used for.
 
 ## usage
