@@ -329,11 +329,11 @@ class Location:
 		self._json = json_data
 		self.country_code = '' if 'country_code' not in self._json else self._json['country_code']
 		self.country_name = '' if 'country_name' not in self._json else self._json['country_name']
-		self.country = "%s - %s" % (self._json['country_code'], self._json['country_name'])
-		self.city = self._json['city']
-		self.longitude = self._json['longitude']
-		self.latitude = self._json['latitude']
-		self.geo = "%s, %s (long, lat)" % (self._json['longitude'], self._json['latitude'])
+		self.country = "%s - %s" % (self.country_code, self.country_name)
+		self.city = '' if 'city' not in self._json else self._json['city']
+		self.longitude = '' if 'longitude' not in self._json else self._json['longitude']
+		self.latitude = '' if 'latitude' not in self._json else self._json['latitude']
+		self.geo = "%s, %s (long, lat)" % (self.longitude, self.latitude)
 
 	def as_string(self):
 		data = ""
@@ -349,8 +349,8 @@ class Shodan_Host:
 		self.last_update = '' if 'last_update' not in self._json else self._json['last_update']
 		self.ip = self._json['ip_str']
 		self.asn = '' if 'asn' not in self._json else self._json['asn']
-		self.hostnames = self._json['hostnames']
-		self.domains = self._json['domains']
+		self.hostnames = '' if 'hostnames' not in self._json else self._json['hostnames']
+		self.domains = '' if 'domains' not in self._json else self._json['domains']
 		self.location = Location(self._json)
 		self.isp = self._json['isp']
 		self.org = self._json['org']
@@ -445,7 +445,9 @@ class Shodan_Host:
 
 	@property
 	def host_ports(self):
-		ports = self._json["ports"]
+		ports = []
+		if "ports" in self._json:
+			ports = self._json["ports"]
 		ports.sort()
 		return ports
 		
@@ -973,6 +975,7 @@ def custom_fields_as_csv_format(shodan, service):
 			csv_format = "%s," % csv_format
 
 	return csv_format
+
 def show_json_path_as_field(shodan, service):
 	if len(shodan.settings['Out_Custom_Fields']) == 0:
 		return
@@ -1018,7 +1021,15 @@ def show_json_path_as_field(shodan, service):
 			out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
 		print(out_data)
-
+def match_service_on_custom_conditions_ex(shodan, service, custom_conditions):
+	if len(custom_conditions) == 0:
+		return True
+	
+	for custom_condition in custom_conditions:
+		path_exists, path_value = get_json_path(service._json, set_default_json_path_condition(custom_condition).split(":")[0].strip())
+		if not match_on_json_path_condition(service._json, custom_condition, shodan.settings['Debug_Mode']):
+			return False
+	return True
 def match_service_on_custom_conditions(shodan, service):
 	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
 		return True
@@ -1180,7 +1191,6 @@ def filter_out_service(shodan, service):
 					return True
 
 	return False
-
 def out_shodan(shodan):
 	host_json = shodan.get_cache()
 
@@ -1244,6 +1254,14 @@ def out_shodan(shodan):
 	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
 	out_custom_fields_as_csv_format = []
 
+	threat_custom_conditions = OrderedDict()
+	threat_custom_conditions["Cobalt Strike - Malleable C2 Profile"] = 'cobalt_strike_beacon'
+	threat_custom_conditions["Potential cobaltstrike - Team Server (default port)"] = 'port=50050'
+	threat_custom_conditions["Potential cobaltstrike - Team Server (by known data)"] = 'data=\u0015\u0003\u0003\u0000\u0002\u0002\n'
+	threat_custom_conditions["Potential cobaltstrike (http-headers)"] = 'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'
+	threat_custom_conditions["Possible 'Tor' by known jarm hash"] = 'ssl.jarm=2ad2ad16d2ad2ad00042d42d000000332dc9cd7d90589195193c8bb05d84fa,hash=0'
+	threat_custom_conditions["Tag: Tor"] = 'tags:has=tor'
+
 	for service in filtered_services: 
 		# // output service overview
 		fill_prefix = 1
@@ -1280,7 +1298,16 @@ def out_shodan(shodan):
 			print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
 			if service.has_tags:
 				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
+
+			#custom_conditions = 'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'.split(",")
+			for threat_name in threat_custom_conditions:
+				threat_custom_condition = threat_custom_conditions[threat_name].split(",")
+				if match_service_on_custom_conditions_ex(shodan, service, threat_custom_condition):
+					#print("%s! %s" % (fill_prefix, "potential cobaltstrike (http-headers)"))
+					print("%s! %s" % (fill_prefix, threat_name))
+
 			print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
+
 			# v-- [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
 			#if service.product.is_cobaltstrike:
 			#	print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
@@ -1381,28 +1408,33 @@ def out_shodan(shodan):
 			print("")
 
 		if len(shodan.settings['Out_Custom_Fields']) > 0:
-			# and custom_field_csv_file(shodan) is None
 			if shodan.settings['Out_Custom_Fields_AS_CSV'] is None:
 				show_json_path_as_field(shodan, service)
 			else:
 				csv_format = custom_fields_as_csv_format(shodan, service)
 				out_custom_fields_as_csv_format.append(csv_format)
-				print("%s     ** %s" % (fill_prefix, csv_format))
-	
-	#if len(shodan.settings['Out_Custom_Fields']) > 0:
+				print("%s     ** %s" % (fill_prefix[0:-1], csv_format))
+
 	if shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
 		if len(out_custom_fields_as_csv_format) > 0:
-			# // output if no file is specified
-			if custom_field_csv_file(shodan) is None:
-				print(custom_fields_as_csv_headers(shodan))
+			csv_file = custom_field_csv_file(shodan)
+			# // write to file if specified
+			if csv_file is not None:
+				#print(custom_fields_as_csv_headers(shodan))
+				print("csv stored in file '%s'" % csv_file)
+				with open(csv_file, "w") as f:
+					f.write('%s\n' % custom_fields_as_csv_headers(shodan))
+				with open(csv_file, "a") as f:
+					f.write('\n'.join(out_custom_fields_as_csv_format))
+					f.write('\n')
 				for csv_format in out_custom_fields_as_csv_format:
-					#break
+					break
 					print(csv_format)
 			else:
-				# // output to file is specified
+				# // output if no file is specified
 				print(custom_fields_as_csv_headers(shodan))
-				print("output csv to file '%s'" % custom_field_csv_file(shodan))
-
+				for csv_line in out_custom_fields_as_csv_format:
+					print(csv_line)
 
 def filter_list_by_head_tail(shodan, data_list):
 	head_arg_index = get_arg_index(sys.argv, "--head")
@@ -1436,12 +1468,10 @@ def filter_list_by_head_tail(shodan, data_list):
 
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
-	#if shodan.settings['Verbose_Mode']:
-	if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode']:
 		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
 	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
-	#if shodan.settings['Verbose_Mode']:
-	if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode']:
 		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
 
 	if shodan.settings['Flush_Cache']:
@@ -1449,7 +1479,6 @@ def list_cache(shodan, target=None):
 
 	if target is not None:
 		print(headers)
-		#if target.isnumeric():
 		if shodan._target_is_cache_index(target):
 			target = shodan._get_target_by_cache_index(target)
 			cache_file = shodan._get_out_path(shodan._target_as_out_file(target))
@@ -1485,13 +1514,16 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
-		if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
-			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
-				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
+		if shodan.settings['Verbose_Mode']:
+			if len(host.hostnames) > 0 and not shodan.settings['Out_No_Hostname']:
+				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
+				if not shodan.settings['Out_Host_Only']:
+					out_data = "%s / " % (out_data)
 			else:
 				out_data = "%s\t" % (out_data)
-			host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
-			out_data = "%sPorts: %s" % (out_data, host_ports)
+			if not shodan.settings['Out_Host_Only']:
+				host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
+				out_data = "%sPorts: %s" % (out_data, host_ports)
 			
 		print(out_data)
 		return
@@ -1518,6 +1550,9 @@ def list_cache(shodan, target=None):
 		cache_file = shodan._get_out_path(file)
 		host = Shodan_Host(shodan.settings, shodan.get_cache_by_file(cache_file), False)
 		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+		#if len(host.last_update) > 0:
+		#	last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+		#last_update = 'xxxx-xx-xx xx:xx:xx'
 		out_data = "%s\t%s" % (out_data, last_update)
 		c_time = os.path.getctime(cache_file)
 		cached_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
@@ -1532,14 +1567,18 @@ def list_cache(shodan, target=None):
 		out_data = "%s, %s months" % (out_data, cached_delta.months)
 		out_data = "%s, %s days" % (out_data, cached_delta.days)
 		out_data = "%s, %sh, %s min" % (out_data, cached_delta.hours, cached_delta.minutes)
+
 		if cached_delta.minutes == 0:
 			out_data = "%s, %s sec" % (out_data, cached_delta.seconds)
 		else:
 			out_data = "%s\t" % out_data
 
-		if not shodan.settings['Out_Host_Only'] or shodan.settings['Verbose_Mode']:
-			if shodan.settings['Verbose_Mode'] and len(host.hostnames) > 0:
-				out_data = "%s\thostnames: %s / " % (out_data, ', '.join(host.hostnames))
+		if shodan.settings['Verbose_Mode']:
+			if len(host.hostnames) > 0 and not shodan.settings['Out_No_Hostname']:
+				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
+				if not shodan.settings['Out_Host_Only']:
+					if not shodan.settings['Out_Host_Only']:
+						out_data = "%s / " % (out_data)
 			else:
 				out_data = "%s\t" % (out_data)
 			if not shodan.settings['Out_Host_Only']:
@@ -1548,7 +1587,7 @@ def list_cache(shodan, target=None):
 
 		if not match_cached_host_on_condition(shodan, host):
 			continue
-		#print(out_data)
+
 		out_cache_list.append(out_data)
 	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
 	for out_data in out_cache_list:
@@ -1557,8 +1596,8 @@ def list_cache(shodan, target=None):
 def match_cached_host_on_condition(shodan, host):
 	if not match_on_cached_host(shodan, host):
 		return False
-	if filter_out_cached_host(shodan, host):
-		return False
+	#if filter_out_cached_host(shodan, host):
+	#	return False
 
 	return True
 def match_on_cached_host(shodan, host):
@@ -1567,6 +1606,14 @@ def match_on_cached_host(shodan, host):
 		for port in host.host_ports:
 			if port in shodan.settings['Match_On_Ports']:
 				return True
+		return False
+	found_match = False
+	for service in host.services:
+		# filter in/out based on condition
+		if match_service_on_condition(shodan, service):
+			found_match = True
+	if not found_match:
+		return True
 		return False
 	return True
 def filter_out_cached_host(shodan, host):
@@ -2012,8 +2059,8 @@ if __name__ == '__main__':
 	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
 	parser.add_argument('-t', dest='target', help="Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets")
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
-	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List cached hosts and exit. Use '-F' to re-cache, use '-t' for specific target. Use '-v' to list available hostnames of the target." +
-		"\nUse '--host-only' to hide output of ports")
+	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List an overview of cached hosts and exit. Use '-F' to re-cache and '-t' for specific target. Use '-v' to list available ports and hostnames of the target." +
+		"\nUse '--host-only' to only show hostnames in verbose mode ('-v'), '--hide-hostname' to hide hostnames in verbose mode ('-v')")
 	parser.add_argument('-H', '--history', dest='include_history', action='store_true', help="Include host history when query shodan or when viewing cached target if available")
 	parser.add_argument('--cache-dir', dest='cache_dir', metavar="<path>", default='shodan-data', help="define custom cache directory, default './shodan-data' in current directory" +
 		"\n\n")
