@@ -122,7 +122,7 @@ options:
   --host-only           Only output host information, skip port/service information
   --hide-hostname       Hide hostnames and domains from overview
   --hide-vulns          Hide vulns information from overview and json output
-  --threat-rule <file>  Tags services based on file with named (tag) defined custom conditions to match, same syntax as for '-mc'
+  --threat-rule <file>  Tags services based on file with named (tag) defined custom conditions to match, <rule_name>;<multi_condition> per line. See '-mc' for syntax
   --threat-only         Filter out services not matching the '--threat-rule' match
   -v, --verbose         Enabled verbose mode
   --debug               Enabled debug mode
