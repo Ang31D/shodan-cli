@@ -896,10 +896,19 @@ def custom_field_csv_file(shodan):
 		csv_file = fields_and_file[1].strip()
 	return csv_file
 def custom_fields_as_csv_headers(shodan):
-	map_field_to_path = map_custom_fields_as_csv_headers(shodan)
-	return ','.join(list(map_field_to_path.keys()))
+	csv_headers = []
+	#map_field_to_path = map_custom_fields_as_csv_headers(shodan)
+	map_path_to_field = map_custom_fields_as_csv_headers(shodan)
+	for custom in shodan.settings['Out_Custom_Fields']:
+		path = set_default_json_path_condition(custom).split(':')[0].strip()
+		if path in map_path_to_field:
+			csv_headers.append(map_path_to_field[path])
+		else:
+			csv_headers.append(path)
+	return ','.join(csv_headers)
 def map_custom_fields_as_csv_headers(shodan):
 	map_field_to_path = OrderedDict()
+	map_path_to_field = OrderedDict()
 	if shodan.settings['Out_Custom_Fields_AS_CSV'] is None:
 		return map_field_to_path
 	if ":" not in shodan.settings['Out_Custom_Fields_AS_CSV']:
@@ -928,9 +937,11 @@ def map_custom_fields_as_csv_headers(shodan):
 
 		if field_name not in map_field_to_path:
 			map_field_to_path[field_name] = json_path
+		if json_path not in map_path_to_field:
+			map_path_to_field[json_path] = field_name
 
-	#return ','.join(list(map_field_to_path.keys()))
-	return map_field_to_path
+	#return map_field_to_path
+	return map_path_to_field
 
 def custom_fields_as_csv_format(shodan, service):
 	csv_format = ""
@@ -1390,7 +1401,7 @@ def out_shodan(shodan):
 			else:
 				# // output to file is specified
 				print(custom_fields_as_csv_headers(shodan))
-				print("output csv to file")
+				print("output csv to file '%s'" % custom_field_csv_file(shodan))
 
 
 def filter_list_by_head_tail(shodan, data_list):
