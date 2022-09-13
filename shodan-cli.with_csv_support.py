@@ -189,8 +189,17 @@ class ShodanSettings:
 			for scanned_hostname in args.match_on_scanned_hostname.split(','):
 				self.settings['Match_On_Scanned_Hostname'].append(scanned_hostname.strip())
 		if args.match_on_custom_conditions is not None:
-			for condition in args.match_on_custom_conditions.split(','):
-				self.settings['Match_On_Custom_Conditions'].append(condition.strip())
+			#print("ShodanSettings.init() : args.match_on_custom_conditions.type: %s, count: %s" % (type(args.match_on_custom_conditions).__name__, len(args.match_on_custom_conditions)))
+			for multi_condition in args.match_on_custom_conditions:
+				#print(multi_condition)
+				#print("ShodanSettings.init() : multi_condition.type: %s, count: %s" % (type(multi_condition).__name__, len(multi_condition)))
+				self.settings['Match_On_Custom_Conditions'].append(multi_condition[0].split(','))
+			#print(self.settings['Match_On_Custom_Conditions'])
+			#for i in range(len(self.settings['Match_On_Custom_Conditions'])):
+			#	print(self.settings['Match_On_Custom_Conditions'][i])
+			#exit()
+			#for condition in args.match_on_custom_conditions.split(','):
+			#	self.settings['Match_On_Custom_Conditions'].append(condition.strip())
 		if args.out_custom_fields is not None:
 			for condition in args.out_custom_fields.split(','):
 				self.settings['Out_Custom_Fields'].append(condition.strip())
@@ -1030,7 +1039,18 @@ def match_service_on_custom_conditions_ex(shodan, service, custom_conditions):
 		if not match_on_json_path_condition(service._json, custom_condition, shodan.settings['Debug_Mode']):
 			return False
 	return True
+def match_service_on_and_or_custom_conditions(shodan, service):
+	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
+		return True
+
+	negated_match_found = False
+	for multi_custom_condition in shodan.settings['Match_On_Custom_Conditions']:
+		if match_service_on_custom_conditions_ex(shodan, service, multi_custom_condition):
+			return True
+
+	return False
 def match_service_on_custom_conditions(shodan, service):
+	return match_service_on_and_or_custom_conditions(shodan, service)
 	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
 		return True
 
@@ -1613,7 +1633,7 @@ def match_on_cached_host(shodan, host):
 		if match_service_on_condition(shodan, service):
 			found_match = True
 	if not found_match:
-		return True
+		#return True
 		return False
 	return True
 def filter_out_cached_host(shodan, host):
@@ -2073,7 +2093,10 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
 	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
 	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
-	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list" +
+	#type=str, nargs="*"
+	#parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list" +
+	#type=str, nargs="*"
+	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', type=str, nargs="*", action="append", metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list" +
 		"\n" +
 		"supported conditions:\n" +
 		"- 'exists': match if <json-path> exists\n" +
