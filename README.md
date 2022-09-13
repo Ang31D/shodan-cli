@@ -43,7 +43,7 @@ Note: we should implement `async` to support callbacks (I think). Never used `as
 ```
 Shodan Cli in python
 
-optional arguments:
+options:
   -h, --help            show this help message and exit
   --api-info            Output API info and exit, use '-v' for verbose output
   --account-profile     Output Shodan Account Profile info and exit, use '-v' for verbose output
@@ -53,7 +53,7 @@ optional arguments:
                         Use '--host-only' to only show hostnames in verbose mode ('-v'), '--hide-hostname' to hide hostnames in verbose mode ('-v')
   -H, --history         Include host history when query shodan or when viewing cached target if available
   --cache-dir <path>    define custom cache directory, default './shodan-data' in current directory
-
+                        
   -mp port[,port,...], --match-ports port[,port,...]
                         Match on port, comma-separated list of ports
   -ms service[,service,...], --match-service service[,service,...]
@@ -72,7 +72,7 @@ optional arguments:
                         Filter out service type, comma-separated list of services (ex. ssh,http,https)
   -fH host[,host,...], --filter-hostname host[,host,...]
                         Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts
-  -mc <condition>, --match-json <condition>
+  -mc [<condition> ...], --match-json [<condition> ...]
                         Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list
                         supported conditions:
                         - 'exists': match if <json-path> exists
@@ -80,7 +80,7 @@ optional arguments:
                         - 'is-type|type': match if defined type (<value>) == type of returned <json-path> value
                         - 'equals|value|is': match if <value> == value of returned <json-path>
                         - 'contains': match if value of returned <json-path> contains <value>
-                        - 'has': match if <value> == value of returned <json-path> for 'list', 'OrderedDict' & 'dict' (json)
+                        - 'has': match if <value> == value of returned <json-path> for 'list', 'OrderedDict' & 'dict' (json) 
                         - 'starts|begins', 'ends': match if value of returned <json-path> matches condition of <value> for 'str' & 'int'
                         - 'len', 'min-len', 'max-len': match if length of returned <json-path> matches condition (same length, greater then equal or less then equal) of <value> for 'str', 'int', 'list', 'OrderedDict' & 'dict'
                         - 'gt', 'gte', 'lt', 'lte', 'eq': match if number of returned <json-path> matches condition (greater then, greater equal then, less then, less equal then, equal) of <value>
@@ -89,7 +89,7 @@ optional arguments:
                         default behaviours:
                         - By default match by 'case insensitive', 'case sensitive' match when 'condition' starts with an uppercase letter
                         - Missing condition as '<path>' defaults to '<path>:exists', only negated condition as '<path>:not' defaults to '<path>:not-exists'
-
+                        
   --sort-date           Output services by scan date, default port and scan date
   --head num            output first number of services
   --tail num            output last number of services
@@ -97,7 +97,7 @@ optional arguments:
   -m, --service-module  Output service module data
   --host-json           Output host json
   -sj, --service-json   Output service json
-
+                        
   --time [<datetime range> ...]
                         List cached targets matching range
   --since <date-from>   List cached targets since (before) 'date-from'
@@ -105,7 +105,7 @@ optional arguments:
   --until <date-to>     List cached targets until 'date-to', from now and up to date
   --before <before-date>
                         List cached targets before 'date-format'
-
+                        
                         supported date-formats:
                         - <year>-<month>-<day> / YYYY-DD-MM, ex 2021-03-20
                         - <number>.<pronom>.ago, ex 2.days.ago, 1.day.ago
@@ -113,15 +113,17 @@ optional arguments:
                         number of Y(ear)(s), M(onth)(s), D(ay)(s), h(our)(s), m/min(s),minute(s), s/sec(s)/second(s)
   -F, --flush-cache     Flush cache from history, use '-t' to re-cache target data
   --rm                  Removes target from the cache
-  --host-only           Only output host information, skip port/service information
-
+                        
   -cf <condition>, --custom-field <condition>
                         Output field based on condition, see '-mc' for syntax
   --cf-b64              Output field based on condition as base 64 (for safe output)
   -cf-csv <map-format>  Output the result using '-cf' as 'csv' format; format: <json-path>=<as_field_name>[,<json-path>=<as_field_name>,...][:<out_file>]
   -n, --no-dns          Never do DNS resolution/Always resolve
+  --host-only           Only output host information, skip port/service information
   --hide-hostname       Hide hostnames and domains from overview
   --hide-vulns          Hide vulns information from overview and json output
+  --threat-rule <file>  Tags services based on file with named (tag) defined custom conditions to match, same syntax as for '-mc'
+  --threat-only         Filter out services not matching the '--threat-rule' match
   -v, --verbose         Enabled verbose mode
   --debug               Enabled debug mode
 ```
