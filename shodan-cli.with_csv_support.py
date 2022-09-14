@@ -139,6 +139,9 @@ class ShodanSettings:
 		self.settings['Match_On_ShodanID'] = []
 		self.settings['Match_On_Scanned_Hostname'] = []
 		self.settings['Match_On_Custom_Conditions'] = []
+		self.settings['Match_On_Named_Custom_Condition_File'] = None
+		self.settings['Match_On_Named_Custom_Conditions'] = []
+		self.settings['Filter_Out_Non_Matched_Named_Custom_Conditions'] = False
 		self.settings['Match_On_Crawler'] = []
 		self.settings['Match_On_Scan_Id'] = []
 		self.settings['Filter_Out_Ports'] = []
@@ -189,17 +192,12 @@ class ShodanSettings:
 			for scanned_hostname in args.match_on_scanned_hostname.split(','):
 				self.settings['Match_On_Scanned_Hostname'].append(scanned_hostname.strip())
 		if args.match_on_custom_conditions is not None:
-			#print("ShodanSettings.init() : args.match_on_custom_conditions.type: %s, count: %s" % (type(args.match_on_custom_conditions).__name__, len(args.match_on_custom_conditions)))
 			for multi_condition in args.match_on_custom_conditions:
-				#print(multi_condition)
-				#print("ShodanSettings.init() : multi_condition.type: %s, count: %s" % (type(multi_condition).__name__, len(multi_condition)))
 				self.settings['Match_On_Custom_Conditions'].append(multi_condition[0].split(','))
-			#print(self.settings['Match_On_Custom_Conditions'])
-			#for i in range(len(self.settings['Match_On_Custom_Conditions'])):
-			#	print(self.settings['Match_On_Custom_Conditions'][i])
-			#exit()
-			#for condition in args.match_on_custom_conditions.split(','):
-			#	self.settings['Match_On_Custom_Conditions'].append(condition.strip())
+		if args.match_on_named_custom_condition_file is not None:
+			self.settings['Match_On_Named_Custom_Condition_File'] = args.match_on_named_custom_condition_file
+			self.settings['Match_On_Named_Custom_Conditions'] = get_named_multi_custom_conditions_from_file(args.match_on_named_custom_condition_file)
+			self.settings['Filter_Out_Non_Matched_Named_Custom_Conditions'] = args.filter_out_non_matched_named_custom_conditions
 		if args.out_custom_fields is not None:
 			for condition in args.out_custom_fields.split(','):
 				self.settings['Out_Custom_Fields'].append(condition.strip())
@@ -1030,27 +1028,99 @@ def show_json_path_as_field(shodan, service):
 			out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
 		print(out_data)
-def match_service_on_custom_conditions_ex(shodan, service, custom_conditions):
-	if len(custom_conditions) == 0:
+def match_service_on_multi_custom_conditions(shodan, service, multi_custom_conditions):
+	if len(multi_custom_conditions) == 0:
 		return True
 	
-	for custom_condition in custom_conditions:
-		path_exists, path_value = get_json_path(service._json, set_default_json_path_condition(custom_condition).split(":")[0].strip())
+	for custom_condition in multi_custom_conditions:
+		if shodan.settings["Debug_Mode"]:
+			print("[*] match_service_on_multi_custom_conditions() condition '%s'" % custom_condition)
+		#path_exists, path_value = get_json_path(service._json, set_default_json_path_condition(custom_condition).split(":")[0].strip())
 		if not match_on_json_path_condition(service._json, custom_condition, shodan.settings['Debug_Mode']):
+			if shodan.settings['Debug_Mode']:
+				print("[-] tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s', port: %s, no match on condition '%s'" % (service._json["_shodan"]["id"], service._json["port"], custom_condition))
 			return False
+		else:
+			if shodan.settings['Debug_Mode']:
+				print("[+] tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s', port: %s, no match on condition '%s'" % (service._json["_shodan"]["id"], service._json["port"], custom_condition))
 	return True
-def match_service_on_and_or_custom_conditions(shodan, service):
+def get_named_multi_custom_conditions_from_file(file):
+	named_multi_custom_conditions = OrderedDict()
+	if not os.path.isfile(file):
+		return named_multi_custom_conditions
+
+	with open(file, "r") as f:
+		for line in f:
+			rule_string = line.strip()
+			if len(rule_string) == 0 or "#" == rule_string[0]:
+				continue
+			rule_name = rule_string.split(";")[0].strip()
+			print("rule_string: '%s'" % rule_string)
+			rule_conditions = rule_string.split(";")[1:][0].split(",")
+			if rule_name not in named_multi_custom_conditions:
+				named_multi_custom_conditions[rule_name] = rule_conditions
+
+	return named_multi_custom_conditions
+def tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
+	tags = []
+	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
+		return tags
+
+	#if "_shodan" in service._json and "id" in service._json["_shodan"] and service._json["_shodan"]["id"] == "3b5a9345-805e-484e-be7f-3d88832d481c":
+	#	print("tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s'" % service._json["_shodan"]["id"])
+	
+	named_multi_custom_conditions = shodan.settings['Match_On_Named_Custom_Conditions']
+	for rule_name in named_multi_custom_conditions:
+		rule_multi_custom_conditions = named_multi_custom_conditions[rule_name]
+		if len(rule_multi_custom_conditions) == 0:
+			continue
+		if shodan.settings["Debug_Mode"]:
+			print("[*] tags_by_match_service_on_named_multi_custom_conditions() : [checking rule] _shodan.id == '%s', port: %s, rule_name '%s', conditions: '%s'" % (service._json["_shodan"]["id"], service._json["port"], rule_name, rule_multi_custom_conditions))
+		if match_service_on_multi_custom_conditions(shodan, service, rule_multi_custom_conditions):
+			if shodan.settings["Debug_Mode"]:
+				print("[+] tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s', port: %s, match on rule '%s'" % (service._json["_shodan"]["id"], service._json["port"], rule_name))
+			if rule_name not in tags:
+				tags.append(rule_name)
+		else:
+			if shodan.settings["Debug_Mode"]:
+				print("[-] tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s', port: %s, no match on rule '%s'" % (service._json["_shodan"]["id"], service._json["port"], rule_name))
+
+	return tags
+def match_service_on_named_multi_custom_conditions(shodan, service, rule_name):
+	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
+		return True
+	
+	if rule_name not in shodan.settings['Match_On_Named_Custom_Conditions']:
+		return False
+
+	multi_custom_conditions = shodan.settings['Match_On_Named_Custom_Conditions'][rule_name]
+	if len(multi_custom_conditions) == 0:
+		return False
+
+	return match_service_on_multi_custom_conditions(shodan, service, multi_custom_conditions)
+def match_service_on_any_named_multi_custom_conditions(shodan, service):
+	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
+		return True
+
+	named_multi_custom_conditions = shodan.settings['Match_On_Named_Custom_Conditions']
+	for rule_name in named_multi_custom_conditions:
+		multi_custom_conditions = named_multi_custom_conditions[rule_name]
+		if match_service_on_multi_custom_conditions(shodan, service, multi_custom_conditions):
+			return True
+
+	return False
+def match_service_on_andor_multi_custom_conditions(shodan, service):
 	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
 		return True
 
 	negated_match_found = False
 	for multi_custom_condition in shodan.settings['Match_On_Custom_Conditions']:
-		if match_service_on_custom_conditions_ex(shodan, service, multi_custom_condition):
+		if match_service_on_multi_custom_conditions(shodan, service, multi_custom_condition):
 			return True
 
 	return False
 def match_service_on_custom_conditions(shodan, service):
-	return match_service_on_and_or_custom_conditions(shodan, service)
+	return match_service_on_andor_multi_custom_conditions(shodan, service)
 	if len(shodan.settings['Match_On_Custom_Conditions']) == 0:
 		return True
 
@@ -1082,13 +1152,14 @@ def set_default_json_path_condition(path_condition):
 	return path_condition
 def match_on_json_path_condition(json, path_condition, debug=False):
 	path_condition = set_default_json_path_condition(path_condition)
-	if ':' not in path_condition or len(path_condition.split(':')) != 2:
+	#if ':' not in path_condition or len(path_condition.split(':')) != 2:
+	if ':' not in path_condition or len(path_condition.split(':')) < 2:
 		if debug:
 			print("-match_on_json_path_condition() : invalid path_condition format '%s'" % (path_condition))
 		return False
 
 	path = path_condition.split(':')[0].strip()
-	field_condition = path_condition.split(':')[1].strip()
+	field_condition = ':'.join(path_condition.split(':')[1:]).strip()
 
 	condition_value = None
 	condition = field_condition
@@ -1097,7 +1168,7 @@ def match_on_json_path_condition(json, path_condition, debug=False):
 		condition = condition.split("=")[0]
 	
 	if debug:
-		print("-match_on_json_path_coidition() field_condition '%s'" % (field_condition))
+		print("[*] match_on_json_path_coidition() field_condition '%s'" % (field_condition))
 	negated_match = Condition.has_negation_operator(condition)
 	case_sensitive_match = Condition.is_case_sensitive(condition)
 	condition = Condition.strip_negation_operator(condition)
@@ -1112,7 +1183,7 @@ def match_on_json_path_condition(json, path_condition, debug=False):
 		path_type = "json"
 
 	if debug:
-		print("-match_on_json_path_condition() condition '%s:%s', path.exists: %s, path_value.type: %s\n#### %s" % (path, field_condition, path_exists, path_type, path_value))
+		print("[*] match_on_json_path_condition() condition path: '%s', condition: '%s', path.exists: %s, path_value.type: %s\n################\n%s\n################" % (path, field_condition, path_exists, path_type, path_value))
 
 	if Condition.EXISTS == condition:
 		if negated_match:
@@ -1260,6 +1331,7 @@ def out_shodan(shodan):
 		print('\n'.join(host_data))
 	if shodan.settings['Out_Host_Only']:
 		return
+
 	print("* Service Overview\n %s" % ('-'*30))
 	# // format service headers
 	print("Scan-Date\tPort      Service\tVersion / Info")
@@ -1269,21 +1341,25 @@ def out_shodan(shodan):
 	for service in host.services:
 		# filter in/out based on condition
 		if match_service_on_condition(shodan, service):
+			if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+				service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+				if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
+					continue
 			filtered_services.append(service)
 		
 	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
 	out_custom_fields_as_csv_format = []
 
-	threat_custom_conditions = OrderedDict()
-	threat_custom_conditions["Cobalt Strike - Malleable C2 Profile"] = 'cobalt_strike_beacon'
-	threat_custom_conditions["Potential cobaltstrike - Team Server (default port)"] = 'port=50050'
-	threat_custom_conditions["Potential cobaltstrike - Team Server (by known data)"] = 'data=\u0015\u0003\u0003\u0000\u0002\u0002\n'
-	threat_custom_conditions["Potential cobaltstrike (http-headers)"] = 'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'
-	threat_custom_conditions["Possible 'Tor' by known jarm hash"] = 'ssl.jarm=2ad2ad16d2ad2ad00042d42d000000332dc9cd7d90589195193c8bb05d84fa,hash=0'
-	threat_custom_conditions["Tag: Tor"] = 'tags:has=tor'
-
 	for service in filtered_services: 
 		# // output service overview
+		service_tags = []
+		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+			if shodan.settings["Debug_Mode"]:
+				print("[*] out_shodan() : [fetching tags] _shodan.id == '%s', port: %s" % (service._json["_shodan"]["id"], service._json["port"]))
+			service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+			if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
+				continue
+
 		fill_prefix = 1
 		service_header = "%s/%s" % (service.port, service.protocol.upper())
 		module_name = service.module_name
@@ -1304,28 +1380,24 @@ def out_shodan(shodan):
 
 		if shodan.settings['Verbose_Mode']:
 			shodan_header = "%sShodan - ID: %s" % (fill_prefix, service.identifier)
-			#print("%sShodan.ID: %s" % (fill_prefix, service.identifier))
-			#if len(service.scanned_hostname) > 0:
-			#	shodan_header = "%s, Scanned Host: %s" % (shodan_header, service.scanned_hostname)
 			if len(service.crawler) > 0:
 				shodan_header = "%s, Crawler: %s" % (shodan_header, service.crawler)
 			if len(service.scan_id) > 0:
 				shodan_header = "%s, Scan Id: %s" % (shodan_header, service.scan_id)
 			print(shodan_header)
 			if len(service.scanned_hostname) > 0:
-				#shodan_header = "%s, Scanned Host: %s" % (shodan_header, service.scanned_hostname)
 				print("%sScanned Host: %s" % (fill_prefix, service.scanned_hostname))
 			print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
 			if service.has_tags:
 				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
 
-			#custom_conditions = 'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'.split(",")
-			for threat_name in threat_custom_conditions:
-				threat_custom_condition = threat_custom_conditions[threat_name].split(",")
-				if match_service_on_custom_conditions_ex(shodan, service, threat_custom_condition):
-					#print("%s! %s" % (fill_prefix, "potential cobaltstrike (http-headers)"))
-					print("%s! %s" % (fill_prefix, threat_name))
-
+		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+			for service_tag in service_tags:
+				print("%s! %s" % (fill_prefix, service_tag))
+			#for threat_name in shodan.settings['Match_On_Named_Custom_Conditions']:
+			#	if match_service_on_named_multi_custom_conditions(shodan, service, threat_name):
+			#		print("%s! %s" % (fill_prefix, threat_name))
+		if shodan.settings['Verbose_Mode']:
 			print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
 
 			# v-- [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
@@ -1488,15 +1560,16 @@ def filter_list_by_head_tail(shodan, data_list):
 
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
-	if shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
 	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
-	if shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
 
 	if shodan.settings['Flush_Cache']:
 		print("[*] Flushing cache before listing...")
 
+	# // output info of specified target
 	if target is not None:
 		print(headers)
 		if shodan._target_is_cache_index(target):
@@ -1534,6 +1607,7 @@ def list_cache(shodan, target=None):
 		else:
 			out_data = "%s\t" % out_data
 
+		out_info = ""
 		if shodan.settings['Verbose_Mode']:
 			if len(host.hostnames) > 0 and not shodan.settings['Out_No_Hostname']:
 				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
@@ -1544,10 +1618,44 @@ def list_cache(shodan, target=None):
 			if not shodan.settings['Out_Host_Only']:
 				host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
 				out_data = "%sPorts: %s" % (out_data, host_ports)
+#		if shodan.settings['Verbose_Mode']:
+#			if not shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
+#				out_info = "%s\thostnames: %s" % (out_info, ', '.join(host.hostnames))
+#			if not shodan.settings['Out_Host_Only']:
+#				if len(out_info) > 0:
+#					out_info = "%s / " % (out_info)
+#				else:
+#					out_info = "%s\t" % (out_info)
+#				host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
+#				out_info = "%sPorts: %s" % (out_info, host_ports)
+#			if len(out_info) > 0:
+#				out_data = "%s%s" % (out_data, out_info)
+
+		# // tag target from matched named custom conditions
+		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+			service_tags = []
+			for service in host.services:
+				for tag in tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
+					if "[%s]" % tag not in service_tags:
+						service_tags.append("[%s]" % tag)
+			#if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
+			#	continue
+			if len(service_tags) > 0:
+				if shodan.settings['Out_Host_Only'] and shodan.settings['Verbose_Mode']:
+					if not shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
+						out_data = "%s / " % (out_data)
+				elif shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0 and shodan.settings['Verbose_Mode']:
+					out_data = "%s / " % (out_data)
+				elif shodan.settings['Verbose_Mode']:
+					out_data = "%s / " % (out_data)
+				else:
+					out_data = "%s\t" % (out_data)
+				out_data = "%sTags: %s" % (out_data, ', '.join(service_tags))
 			
 		print(out_data)
 		return
 	
+	# // output targets in cached
 	# prefix each header with "cache index"
 	header_data = ["#\t%s" % l for l in headers.split('\n') if len(l) > 0 ]
 	header_data[1] = "-%s" % header_data[1][1:]
@@ -1569,6 +1677,9 @@ def list_cache(shodan, target=None):
 
 		cache_file = shodan._get_out_path(file)
 		host = Shodan_Host(shodan.settings, shodan.get_cache_by_file(cache_file), False)
+
+		if not match_cached_host_on_condition(shodan, host):
+			continue
 		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 		#if len(host.last_update) > 0:
 		#	last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
@@ -1595,18 +1706,36 @@ def list_cache(shodan, target=None):
 
 		if shodan.settings['Verbose_Mode']:
 			if len(host.hostnames) > 0 and not shodan.settings['Out_No_Hostname']:
-				out_data = "%s\thostnames: %s" % (out_data, ', '.join(host.hostnames))
+				out_data = "%s\tHostnames: %s" % (out_data, ', '.join(host.hostnames))
 				if not shodan.settings['Out_Host_Only']:
-					if not shodan.settings['Out_Host_Only']:
-						out_data = "%s / " % (out_data)
+					out_data = "%s / " % (out_data)
 			else:
 				out_data = "%s\t" % (out_data)
 			if not shodan.settings['Out_Host_Only']:
 				host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
 				out_data = "%sPorts: %s" % (out_data, host_ports)
 
-		if not match_cached_host_on_condition(shodan, host):
-			continue
+		# // tag target from matched named custom conditions
+		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+			service_tags = []
+			for service in host.services:
+				for tag in tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
+					if "[%s]" % tag not in service_tags:
+						service_tags.append("[%s]" % tag)
+			if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
+				continue
+			if len(service_tags) > 0:
+				if shodan.settings['Out_Host_Only'] and shodan.settings['Verbose_Mode']:
+					if not shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
+						out_data = "%s / " % (out_data)
+				elif shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0 and shodan.settings['Verbose_Mode']:
+					out_data = "%s / " % (out_data)
+				elif shodan.settings['Verbose_Mode']:
+					out_data = "%s / " % (out_data)
+				else:
+					out_data = "%s\t" % (out_data)
+				out_data = "%sTags: %s" % (out_data, ', '.join(service_tags))
+				
 
 		out_cache_list.append(out_data)
 	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
@@ -1627,12 +1756,32 @@ def match_on_cached_host(shodan, host):
 			if port in shodan.settings['Match_On_Ports']:
 				return True
 		return False
+
+	found_any_match = False
 	found_match = False
+	filtered_services = []
 	for service in host.services:
 		# filter in/out based on condition
 		if match_service_on_condition(shodan, service):
 			found_match = True
-	if not found_match:
+			filtered_services.append(service)
+		#if shodan.settings['Match_On_Named_Custom_Condition_File'] is not None:
+		#if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+		#	if match_service_on_any_named_multi_custom_conditions(shodan, service):
+		#		found_any_match = True
+	
+	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
+		if len(filtered_services) > 0:
+			return True
+	else:
+		for service in filtered_services:
+			if match_service_on_any_named_multi_custom_conditions(shodan, service):
+				return True
+	return False
+
+	#for service in filtered_services:
+
+	if not found_any_match and not found_match:
 		#return True
 		return False
 	return True
@@ -2076,7 +2225,6 @@ if __name__ == '__main__':
 
 	parser.add_argument('--api-info', dest='out_api_info', action='store_true', help="Output API info and exit, use '-v' for verbose output")
 	parser.add_argument('--account-profile', dest='out_account_profile', action='store_true', help="Output Shodan Account Profile info and exit, use '-v' for verbose output")
-	#parser.add_argument('-t', dest='target', help='Host or IP address of the target to lookup, specify a file for multiple targets')
 	parser.add_argument('-t', dest='target', help="Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets")
 	parser.add_argument('-c', '--cache', dest='cache', action='store_true', help="Use cached data if exists or re-cache if '-O' is not specified.")
 	parser.add_argument('-L', '--list-cache', dest='list_cache', action='store_true', help="List an overview of cached hosts and exit. Use '-F' to re-cache and '-t' for specific target. Use '-v' to list available ports and hostnames of the target." +
@@ -2093,9 +2241,6 @@ if __name__ == '__main__':
 	parser.add_argument('-fp', '--filter-port', metavar="port[,port,...]", dest='filter_out_ports', help="Filter out port, comma-separated list of ports")
 	parser.add_argument('-fs', '--filter-service', metavar="service[,service,...]", dest='filter_out_modules', help='Filter out service type, comma-separated list of services (ex. ssh,http,https)')
 	parser.add_argument('-fH', '--filter-hostname', metavar="host[,host,...]", dest='filter_out_scanned_hostname', help='Filter out hostname that was used to talk to the service, supports Unix shell-style wildcards. Comma-separated list of hosts')
-	#type=str, nargs="*"
-	#parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list" +
-	#type=str, nargs="*"
 	parser.add_argument('-mc', '--match-json', dest='match_on_custom_conditions', type=str, nargs="*", action="append", metavar="<condition>", help="Match on json condition; syntax '<json-path>[:[negation-operator]<condition>[=<value>]]', supports comma-separated list" +
 		"\n" +
 		"supported conditions:\n" +
@@ -2134,15 +2279,17 @@ if __name__ == '__main__':
 		"- Apr 1 2021 / 2 weeks ago / 2.weeks.ago\n" +
 		"number of Y(ear)(s), M(onth)(s), D(ay)(s), h(our)(s), m/min(s),minute(s), s/sec(s)/second(s)")
 	parser.add_argument('-F', '--flush-cache', dest='flush_cache', action='store_true', help="Flush cache from history, use '-t' to re-cache target data")
-	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help='Removes target from the cache')
-	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information" +
+	parser.add_argument('--rm', dest='remove_target_from_cache', action='store_true', help="Removes target from the cache" +
 	"\n\n")
 	parser.add_argument('-cf', '--custom-field', dest='out_custom_fields', metavar="<condition>", help="Output field based on condition, see '-mc' for syntax")
 	parser.add_argument('--cf-b64', dest='out_custom_fields_as_base64', action='store_true', help="Output field based on condition as base 64 (for safe output)")
 	parser.add_argument('-cf-csv', dest='out_custom_fields_as_csv', metavar="<map-format>", help="Output the result using '-cf' as 'csv' format; format: <json-path>=<as_field_name>[,<json-path>=<as_field_name>,...][:<out_file>]")
 	parser.add_argument('-n', '--no-dns', dest='no_dns_lookup', action='store_true', help="Never do DNS resolution/Always resolve")
+	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information")
 	parser.add_argument('--hide-hostname', dest='out_no_hostname', action='store_true', help="Hide hostnames and domains from overview")
 	parser.add_argument('--hide-vulns', dest='out_no_vulns', action='store_true', help="Hide vulns information from overview and json output")
+	parser.add_argument('--threat-rule', dest='match_on_named_custom_condition_file', metavar="<file>", help="Tags services based on file with named (tag) defined custom conditions to match, same syntax as for '-mc'")
+	parser.add_argument('--threat-only', dest='filter_out_non_matched_named_custom_conditions', action='store_true', help="Filter out services not matching the '--threat-rule' match")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
 	parser.add_argument('--debug', dest='debug_mode', action='store_true', help="Enabled debug mode")
 
