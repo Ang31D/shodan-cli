@@ -1535,10 +1535,10 @@ def filter_list_by_head_tail(shodan, data_list):
 
 def list_cache(shodan, target=None):
 	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
-	if shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
 	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
-	if shodan.settings['Verbose_Mode']:
+	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
 
 	if shodan.settings['Flush_Cache']:
@@ -1593,24 +1593,26 @@ def list_cache(shodan, target=None):
 				host_ports = ", ".join([str(int) for int in host.host_ports]) # convert int to str
 				out_data = "%sPorts: %s" % (out_data, host_ports)
 
-			# // tag target from matched named custom conditions
-			if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
-				service_tags = []
-				for service in host.services:
-					for tag in tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
-						if tag not in service_tags:
-							service_tags.append("'%s'" % tag)
-				#if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
-				#	continue
-				if len(service_tags) > 0:
-					if shodan.settings['Out_Host_Only']:
-						if not shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
-							out_data = "%s / " % (out_data)
-					elif shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
+		# // tag target from matched named custom conditions
+		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+			service_tags = []
+			for service in host.services:
+				for tag in tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
+					if tag not in service_tags:
+						service_tags.append("'%s'" % tag)
+			#if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
+			#	continue
+			if len(service_tags) > 0:
+				if shodan.settings['Out_Host_Only'] and shodan.settings['Verbose_Mode']:
+					if not shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
 						out_data = "%s / " % (out_data)
-					else:
-						out_data = "%s / " % (out_data)
-					out_data = "%sTags: %s" % (out_data, ', '.join(service_tags))
+				elif shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0 and shodan.settings['Verbose_Mode']:
+					out_data = "%s / " % (out_data)
+				elif shodan.settings['Verbose_Mode']:
+					out_data = "%s / " % (out_data)
+				else:
+					out_data = "%s\t" % (out_data)
+				out_data = "%sTags: %s" % (out_data, ', '.join(service_tags))
 			
 		print(out_data)
 		return
@@ -1682,14 +1684,17 @@ def list_cache(shodan, target=None):
 			if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
 				continue
 			if len(service_tags) > 0:
-				if shodan.settings['Out_Host_Only']:
+				if shodan.settings['Out_Host_Only'] and shodan.settings['Verbose_Mode']:
 					if not shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
 						out_data = "%s / " % (out_data)
-				elif shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0:
+				elif shodan.settings['Out_No_Hostname'] and len(host.hostnames) > 0 and shodan.settings['Verbose_Mode']:
+					out_data = "%s / " % (out_data)
+				elif shodan.settings['Verbose_Mode']:
 					out_data = "%s / " % (out_data)
 				else:
-					out_data = "%s / " % (out_data)
+					out_data = "%s\t" % (out_data)
 				out_data = "%sTags: %s" % (out_data, ', '.join(service_tags))
+				
 
 		out_cache_list.append(out_data)
 	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
