@@ -196,7 +196,8 @@ class ShodanSettings:
 				self.settings['Match_On_Custom_Conditions'].append(multi_condition[0].split(','))
 		if args.match_on_named_custom_condition_file is not None:
 			self.settings['Match_On_Named_Custom_Condition_File'] = args.match_on_named_custom_condition_file
-			self.settings['Match_On_Named_Custom_Conditions'] = get_named_multi_custom_conditions_from_file(args.match_on_named_custom_condition_file)
+			#self.settings['Match_On_Named_Custom_Conditions'] = get_named_multi_custom_conditions_from_file(args.match_on_named_custom_condition_file)
+			self.settings['Match_On_Named_Custom_Conditions'] = get_conditional_tags_from_file(args.match_on_named_custom_condition_file)
 			self.settings['Filter_Out_Non_Matched_Named_Custom_Conditions'] = args.filter_out_non_matched_named_custom_conditions
 		if args.out_custom_fields is not None:
 			for condition in args.out_custom_fields.split(','):
@@ -851,6 +852,33 @@ def match_on_service(shodan, service):
 			return False
 
 	return True
+def filter_out_service(shodan, service):
+	# // filter OUT service based on conditions
+	if len(shodan.settings['Filter_Out_Ports']) > 0:
+		if service.port in shodan.settings['Filter_Out_Ports']:
+			return True
+	if len(shodan.settings['Filter_Out_Modules']) > 0:
+		module_name = service.module_name
+		if '-' in module_name:
+			module_name = module_name.split('-')[0]
+		if service.module_name in shodan.settings['Filter_Out_Modules'] or module_name in shodan.settings['Filter_Out_Modules']:
+			return True
+
+	if len(shodan.settings['Filter_Out_Scanned_Hostname']) > 0:
+		# // match on single hostname
+		if len(shodan.settings['Filter_Out_Scanned_Hostname']) == 1:
+			if len(shodan.settings['Filter_Out_Scanned_Hostname'][0]) == 0:
+				if len(service.scanned_hostname) == 0:
+					return True
+			elif fnmatch(service.scanned_hostname, shodan.settings['Filter_Out_Scanned_Hostname'][0]):
+				return True
+		else:
+			# // if any hostname match then filter IN
+			for hostname in shodan.settings['Filter_Out_Scanned_Hostname']:
+				if fnmatch(service.scanned_hostname, hostname):
+					return True
+
+	return False
 
 def get_json_path(json_dict, path):
 	json_data = json_dict
@@ -1028,6 +1056,19 @@ def show_json_path_as_field(shodan, service):
 			out_data = "%s%s     ** %s: %s" % (out_data, fill_prefix, field_name, path_value)
 	if found_path:
 		print(out_data)
+def match_service_on_conditional_tag_conditions(shodan, service, conditional_tag):
+	if len(conditional_tag.conditions) == 0:
+		return True
+
+	for condition in conditional_tag.conditions:
+		_service_id = "?"
+		if "_shodan" in service._json and "id" in service._json["_shodan"]:
+			_service_id = service._json["_shodan"]["id"]
+		if not match_on_json_path_condition(service._json, condition.as_string(), shodan.settings["Debug_Mode"]):
+			if shodan.settings["Debug_Mode"]:
+				print("[-] match_service_on_conditional_tag_conditions() : timestamp: %s, _shodan.id == '%s', port: %s, no match on condition_string '%s'" % (service._json["timestamp"], _service_id, service._json["port"], condition.as_string()))
+			return False
+	return True
 def match_service_on_multi_custom_conditions(shodan, service, multi_custom_conditions):
 	if len(multi_custom_conditions) == 0:
 		return True
@@ -1042,7 +1083,7 @@ def match_service_on_multi_custom_conditions(shodan, service, multi_custom_condi
 			return False
 		else:
 			if shodan.settings['Debug_Mode']:
-				print("[+] tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s', port: %s, no match on condition '%s'" % (service._json["_shodan"]["id"], service._json["port"], custom_condition))
+				print("[+] tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s', port: %s, match on condition '%s'" % (service._json["_shodan"]["id"], service._json["port"], custom_condition))
 	return True
 def get_named_multi_custom_conditions_from_file(file):
 	named_multi_custom_conditions = OrderedDict()
@@ -1055,12 +1096,141 @@ def get_named_multi_custom_conditions_from_file(file):
 			if len(rule_string) == 0 or "#" == rule_string[0]:
 				continue
 			rule_name = rule_string.split(";")[0].strip()
-			print("rule_string: '%s'" % rule_string)
 			rule_conditions = rule_string.split(";")[1:][0].split(",")
 			if rule_name not in named_multi_custom_conditions:
 				named_multi_custom_conditions[rule_name] = rule_conditions
 
 	return named_multi_custom_conditions
+def get_conditional_tags_from_file(file):
+	conditional_tags = OrderedDict()
+	if not os.path.isfile(file):
+		return conditional_tags
+
+	with open(file, "r") as f:
+		for line in f:
+			tag_string = line.strip()
+			conditional_tag = ConditionalTag(tag_string)
+			conditional_tags[conditional_tag.name] = conditional_tag
+
+	#for tag_name in conditional_tags:
+	#	conditional_tag = conditional_tags[tag_name]
+	#	for json_condition in conditional_tag.conditions:
+	#		print("// is_enabled: '%s' - tag_name '%s' - (is_negate: %s-, is_case_sensitive: %s)\n\t - path: '%s', compare: '%s', match_on: '%s'" % (conditional_tag.is_enabled, tag_name, json_condition.is_negate, json_condition.is_case_sensitive, json_condition.path, json_condition.compare, json_condition.match_on))
+	return conditional_tags
+class ConditionalTag:
+	def __init__(self, definition):
+		self._definition = definition
+		self._tag_name = ''
+		self._is_enabled = True
+		self._multi_conditions = []
+		self._init()
+
+	def _init(self):
+		if self._definition.startswith("#"):
+			self._is_enabled = False
+		if ";" in self._definition:
+			tag_name = self._definition.split(";")[0].strip()
+			if tag_name.startswith("#"):
+				tag_name = tag_name[1:].strip()
+			if len(tag_name) > 0:
+				self._tag_name = tag_name
+		condition_definitions = self._definition.split(";")[1:]
+		for multi_condition_definition in condition_definitions:
+			for path_condition_definition in multi_condition_definition.split(","):
+				self._multi_conditions.append(JsonCondition(path_condition_definition))
+
+	@property
+	def name(self):
+		return self._tag_name
+	@property
+	def is_enabled(self):
+		return self._is_enabled
+	@property
+	def conditions(self):
+		return self._multi_conditions
+	def as_string(self):
+		definition_string = "%s;" % self._tag_name
+		definition_string = ""
+		is_first_iterate = True
+		for condition_tag in self._multi_conditions:
+			if not is_first_iterate:
+				definition_string = "%s," % definition_string
+			definition_string = "%s%s" % (definition_string, condition_tag.as_string())
+			is_first_iterate = False
+		return definition_string
+class JsonCondition:
+	def __init__(self, definition):
+		self._definition = definition.strip()
+		self._path = None
+		self._compare = None
+		self._match_on_value = None
+		self._is_negate = False
+		self._is_case_sensitive = False
+		self._init()
+
+	def _init(self):
+		path_condition = set_default_json_path_condition(self._definition)
+		if ':' not in path_condition or len(path_condition.split(':')) < 2:
+			return
+		self._path = path_condition.split(':')[0].strip()
+		self._compare = ':'.join(path_condition.split(':')[1:]).strip()
+
+		if "=" in self._compare:
+			self._match_on_value = self._compare.split("=")[1]
+			self._compare = self._compare.split("=")[0]
+		
+		self._is_negate = Condition.has_negation_operator(self._compare)
+		self._compare = Condition.strip_negation_operator(self._compare)
+		self._is_case_sensitive = Condition.is_case_sensitive(self._compare)
+		self._compare = self._compare.lower()
+
+	@property
+	def path(self):
+		return self._path
+	@property
+	def compare(self):
+		return self._compare
+	@property
+	def match_on(self):
+		return self._match_on_value
+	@property
+	def is_negate(self):
+		return self._is_negate
+	@property
+	def is_case_sensitive(self):
+		return self._is_case_sensitive
+
+	def as_string(self):
+		condition_as_string = "%s:%s" % (self.path, self.compare)
+		if self.match_on is not None:
+			condition_as_string = "%s=%s" % (condition_as_string, self.match_on)
+		return condition_as_string
+
+def tags_by_match_service_on_conditional_tag_conditions(shodan, service):
+	tags = []
+	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
+		return tags
+
+	#if "_shodan" in service._json and "id" in service._json["_shodan"] and service._json["_shodan"]["id"] == "3b5a9345-805e-484e-be7f-3d88832d481c":
+	#	print("tags_by_match_service_on_named_multi_custom_conditions() : _shodan.id == '%s'" % service._json["_shodan"]["id"])
+	
+	conditional_tags = shodan.settings['Match_On_Named_Custom_Conditions']
+	for tag_name in conditional_tags:
+		conditional_tag = conditional_tags[tag_name]
+		if not conditional_tag._is_enabled or  len(conditional_tag.conditions) == 0:
+			continue
+		if shodan.settings["Debug_Mode"]:
+			print("[*] tags_by_match_service_on_conditional_tag_conditions() : [checking tag] _shodan.id == '%s', port: %s, tag_name '%s', condition_string: '%s'" % (service._json["_shodan"]["id"], service._json["port"], tag_name, conditional_tag.as_string()))
+		if match_service_on_conditional_tag_conditions(shodan, service, conditional_tag):
+			if shodan.settings["Debug_Mode"]:
+				print("[+] tags_by_match_service_on_conditional_tag_conditions() : _shodan.id == '%s', port: %s, match on tag '%s'" % (service._json["_shodan"]["id"], service._json["port"], tag_name))
+			if tag_name not in tags:
+				tags.append(tag_name)
+		else:
+			if shodan.settings["Debug_Mode"]:
+				print("[-] tags_by_match_service_on_conditional_tag_conditions() : _shodan.id == '%s', port: %s, no match on tag '%s'" % (service._json["_shodan"]["id"], service._json["port"], tag_name))
+
+	return tags
 def tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
 	tags = []
 	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
@@ -1102,10 +1272,10 @@ def match_service_on_any_named_multi_custom_conditions(shodan, service):
 	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
 		return True
 
-	named_multi_custom_conditions = shodan.settings['Match_On_Named_Custom_Conditions']
-	for rule_name in named_multi_custom_conditions:
-		multi_custom_conditions = named_multi_custom_conditions[rule_name]
-		if match_service_on_multi_custom_conditions(shodan, service, multi_custom_conditions):
+	conditional_tags = shodan.settings['Match_On_Named_Custom_Conditions']
+	for tag_name in conditional_tags:
+		conditional_tag = conditional_tags[tag_name]
+		if match_service_on_conditional_tag_conditions(shodan, service, conditional_tag):
 			return True
 
 	return False
@@ -1255,33 +1425,6 @@ def match_on_json_path_condition(json, path_condition, debug=False):
 		print("***************************************\n%s\n***************************************" % path_value)
 	return False
 
-def filter_out_service(shodan, service):
-	# // filter OUT service based on conditions
-	if len(shodan.settings['Filter_Out_Ports']) > 0:
-		if service.port in shodan.settings['Filter_Out_Ports']:
-			return True
-	if len(shodan.settings['Filter_Out_Modules']) > 0:
-		module_name = service.module_name
-		if '-' in module_name:
-			module_name = module_name.split('-')[0]
-		if service.module_name in shodan.settings['Filter_Out_Modules'] or module_name in shodan.settings['Filter_Out_Modules']:
-			return True
-
-	if len(shodan.settings['Filter_Out_Scanned_Hostname']) > 0:
-		# // match on single hostname
-		if len(shodan.settings['Filter_Out_Scanned_Hostname']) == 1:
-			if len(shodan.settings['Filter_Out_Scanned_Hostname'][0]) == 0:
-				if len(service.scanned_hostname) == 0:
-					return True
-			elif fnmatch(service.scanned_hostname, shodan.settings['Filter_Out_Scanned_Hostname'][0]):
-				return True
-		else:
-			# // if any hostname match then filter IN
-			for hostname in shodan.settings['Filter_Out_Scanned_Hostname']:
-				if fnmatch(service.scanned_hostname, hostname):
-					return True
-
-	return False
 def out_shodan(shodan):
 	host_json = shodan.get_cache()
 
@@ -1342,7 +1485,8 @@ def out_shodan(shodan):
 		# filter in/out based on condition
 		if match_service_on_condition(shodan, service):
 			if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
-				service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+				#service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+				service_tags = tags_by_match_service_on_conditional_tag_conditions(shodan, service)
 				if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
 					continue
 			filtered_services.append(service)
@@ -1356,7 +1500,8 @@ def out_shodan(shodan):
 		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 			if shodan.settings["Debug_Mode"]:
 				print("[*] out_shodan() : [fetching tags] _shodan.id == '%s', port: %s" % (service._json["_shodan"]["id"], service._json["port"]))
-			service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+			#service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+			service_tags = tags_by_match_service_on_conditional_tag_conditions(shodan, service)
 			if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
 				continue
 
@@ -1635,7 +1780,8 @@ def list_cache(shodan, target=None):
 		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 			service_tags = []
 			for service in host.services:
-				for tag in tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
+				#for tag in tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
+				for tag in tags_by_match_service_on_conditional_tag_conditions(shodan, service):
 					if "[%s]" % tag not in service_tags:
 						service_tags.append("[%s]" % tag)
 			#if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
@@ -1716,10 +1862,14 @@ def list_cache(shodan, target=None):
 				out_data = "%sPorts: %s" % (out_data, host_ports)
 
 		# // tag target from matched named custom conditions
+		#print("[*] list_cache() : conditional_tag_conditions: '%s'" % len(shodan.settings['Match_On_Named_Custom_Conditions']))
 		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 			service_tags = []
 			for service in host.services:
-				for tag in tags_by_match_service_on_named_multi_custom_conditions(shodan, service):
+				if shodan.settings['Debug_Mode']:
+					print("[*] list_cache() : _shodan.id == '%s', port: %s, conditional_tag_conditions '%s'" % (service._json["_shodan"]["id"], service._json["port"], len(shodan.settings['Match_On_Named_Custom_Conditions'])))
+				for tag in tags_by_match_service_on_conditional_tag_conditions(shodan, service):
+					#print("[*] list_cache(filter_out_non_match: %s) : _shodan.id == '%s', ip: %s, port: %s, tag_name: '%s', match count '%s'" % (shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions'], service._json["_shodan"]["id"], service._json["ip_str"], service._json["port"], tag, len(service_tags)))
 					if "[%s]" % tag not in service_tags:
 						service_tags.append("[%s]" % tag)
 			if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
@@ -1735,7 +1885,6 @@ def list_cache(shodan, target=None):
 				else:
 					out_data = "%s\t" % (out_data)
 				out_data = "%sTags: %s" % (out_data, ', '.join(service_tags))
-				
 
 		out_cache_list.append(out_data)
 	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
@@ -1770,14 +1919,14 @@ def match_on_cached_host(shodan, host):
 		#	if match_service_on_any_named_multi_custom_conditions(shodan, service):
 		#		found_any_match = True
 	
-	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
-		if len(filtered_services) > 0:
-			return True
-	else:
-		for service in filtered_services:
-			if match_service_on_any_named_multi_custom_conditions(shodan, service):
-				return True
-	return False
+#	if len(shodan.settings['Match_On_Named_Custom_Conditions']) == 0:
+#		if len(filtered_services) > 0:
+#			return True
+#	else:
+#		for service in filtered_services:
+#			if match_service_on_any_named_multi_custom_conditions(shodan, service):
+#				return True
+	return found_match
 
 	#for service in filtered_services:
 
