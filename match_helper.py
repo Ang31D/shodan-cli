@@ -426,13 +426,12 @@ class Compare:
 			for item in match_on:
 				if "str" == type(item).__name__ and "str" == type(value).__name__:
 					found_match = False
-					#if value.lower() == item.lower():
 					if value.lower() in item.lower():
 						found_match = True
 						break
-				elif "int" == type(item).__name__ and "int" == type(value).__name__:
+				elif "int" == type(item).__name__ and ("int" == type(value).__name__ or ("str" == type(value).__name__) and value.isnumeric()):
 					found_match = False
-					if value == item:
+					if str(value) in str(item):
 						found_match = True
 						break
 		elif "OrderedDict" == type(match_on).__name__ or "dict" == type(match_on).__name__:
@@ -463,7 +462,7 @@ class Compare:
 						break
 				#elif "int" == type(item).__name__ and "int" == type(value).__name__:
 				elif "int" == type(item).__name__ and Compare._is_number(value):
-					print("Compare.has")
+					#print("Compare.has")
 					found_match = False
 					if Compare._cast_str_num_as_int(value) == item:
 						found_match = True
@@ -524,6 +523,30 @@ class Compare:
 			if negated_match:
 				return True
 			return False
+		if "list" == type(match_on).__name__:
+			found_match = None
+			if len(match_on) == 0:
+				return False
+			for item in match_on:
+				if "str" == type(item).__name__ and "str" == type(value).__name__:
+					found_match = False
+					if item.lower().startswith(value.lower()):
+					#if value.lower() in item.lower():
+						found_match = True
+						break
+				elif "int" == type(item).__name__ and ("int" == type(value).__name__ or ("str" == type(value).__name__) and value.isnumeric()):
+					found_match = False
+					if str(item).lower().startswith(value.lower()):
+						found_match = True
+						break
+			if found_match is None:
+				return False
+			if found_match:
+				if negated_match:
+					return False
+				return True
+			if negated_match:
+				return True
 		return False
 	@staticmethod
 	def ends(match_on, value, negated_match=False):
@@ -565,6 +588,29 @@ class Compare:
 			if negated_match:
 				return True
 			return False
+		if "list" == type(match_on).__name__:
+			found_match = None
+			if len(match_on) == 0:
+				return False
+			for item in match_on:
+				if "str" == type(item).__name__ and "str" == type(value).__name__:
+					found_match = False
+					if item.lower().endswith(value.lower()):
+						found_match = True
+						break
+				elif "int" == type(item).__name__ and ("int" == type(value).__name__ or ("str" == type(value).__name__) and value.isnumeric()):
+					found_match = False
+					if str(item).lower().endswith(value.lower()):
+						found_match = True
+						break
+			if found_match is None:
+				return False
+			if found_match:
+				if negated_match:
+					return False
+				return True
+			if negated_match:
+				return True
 		return False
 	@staticmethod
 	def match_on_regex(match_on, pattern, negated_match=False):
