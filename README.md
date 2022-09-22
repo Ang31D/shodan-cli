@@ -127,3 +127,38 @@ options:
   -v, --verbose         Enabled verbose mode
   --debug               Enabled debug mode
 ```
+
+There are 2 modes `list` and `target`.
+
+- `list`   through the `-L` option will list current hosts in the cache
+- `target` through the `-t` option will output the host information and respecive services
+
+# service2host.py
+
+We can convert downloaded results where the output is multiple services instead of a host.
+
+getting services related to "tor" based on the following filter:  
+`ssl.jarm:"2ad2ad16d2ad2ad00042d42d000000332dc9cd7d90589195193c8bb05d84fa" +hash:0 -ssl:Zoom`
+
+To convert the "service" json as a "host" json we can utilize the "service2host.py" python script.
+
+```
+python3 service2host.py -f data/shodan-downloads/daafeb4b-7163-422e-985b-d4fd3bb787dd.json --cache-dir tmp/service_results/shodan-data/
+```
+
+This will take the `data/shodan-downloads/daafeb4b-7163-422e-985b-d4fd3bb787dd.json` as input and output the result to the `tmp/service_results/shodan-data/` directory.
+
+We can now refer to the new cache directory holder the new "host" json files.
+
+```
+python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n
+```
+
+<br>
+<p>
+
+If we want to filter the output of the cache we can use the `-mc` options.
+
+```
+python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tags -cf ip_str,tags,hostnames,ssl.cert.subject.CN,ssl.cert.issuer.CN | grep -Eo "\[.*" | sed 's/\[//g' | sed 's/\]://g'
+```
