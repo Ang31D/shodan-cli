@@ -148,7 +148,7 @@ python3 service2host.py -f data/shodan-downloads/daafeb4b-7163-422e-985b-d4fd3bb
 
 This will take the `data/shodan-downloads/daafeb4b-7163-422e-985b-d4fd3bb787dd.json` as input and output the result to the `tmp/service_results/shodan-data/` directory.
 
-We can now refer to the new cache directory holder the new "host" json files.
+We can now refer to the new cache directory holding the new "host" json files.
 
 ```
 python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n
