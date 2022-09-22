@@ -63,12 +63,6 @@ def define_host_by_service(service_json):
 		host_json["latitude"] = '' if 'latitude' not in service_json["location"] else service_json["location"]['latitude']
 		host_json["longitude"] = '' if 'longitude' not in service_json["location"] else service_json["location"]['longitude']
 
-	#host_json["tags"]: append unique service_json["tags"]
-	#host_json["domains"]: append unique service_json["domains"]
-	#host_json["hostnames"]: append unique service_json["hostnames"]
-	#host_json["ports"]: append unique service_json["port"]
-	#host_json["data"]: append service_json
-
 	return host_json
 
 def update_host_by_service(host_json, service_json):
@@ -93,6 +87,7 @@ def update_host_by_service(host_json, service_json):
 			host_json["ports"].append(service_json["port"])
 	host_json["data"].append(service_json)
 	return host_json
+
 def populate_hosts(file):
 	hosts = OrderedDict()
 
@@ -116,6 +111,7 @@ def populate_hosts(file):
 			host_json = update_host_by_service(host_json, service_json)
 			hosts[host_json["ip_str"]] = host_json
 	return hosts
+
 def main(args):
 	hosts = OrderedDict()
 
@@ -123,16 +119,13 @@ def main(args):
 		return
 
 	hosts = populate_hosts(args.file)
-	#print("host.count: %s" % len(hosts))
 	max_hosts = 0
 	host_index = 0
 	for host_ip in hosts:
 		if max_hosts != 0 and host_index >= max_hosts:
 			break
 		host_json = hosts[host_ip]
-		#print(host_json)
 		print(json_minify(host_json))
-		#print(json_prettify(host_json))
 		if args.cache_dir is not None:
 			out_file = "host.%s.json" % host_ip
 			cache_file = os.path.join(args.cache_dir, out_file)
