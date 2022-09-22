@@ -160,5 +160,7 @@ python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n
 If we want to filter the output of the cache we can use the `-mc` options.
 
 ```
-python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tags -cf ip_str,tags,hostnames,ssl.cert.subject.CN,ssl.cert.issuer.CN | grep -Eo "\[.*" | sed 's/\[//g' | sed 's/\]://g'
+python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tags,tags:not-has=tor
+
+python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tags,tags:not-has=tor  -cf ip_str,tags,hostnames,port,ssl.cert.issuer.CN,ssl.cert.subject.CN
 ```
