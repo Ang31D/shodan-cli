@@ -164,3 +164,21 @@ python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tag
 
 python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tags,tags:not-has=tor  -cf ip_str,tags,hostnames,port,ssl.cert.issuer.CN,ssl.cert.subject.CN
 ```
+
+## MISC
+```bash
+cat shodan-data/host.91.193.75.239.json | jq -c '.data | .[] | select(._shodan.module | contains("http")) | select(.data | contains("22:02:51")) | .data' | sed 's/\\r\\n\\r\\n//g' | sed 's/^"//g' | sed 's/"$//g'  | jq -c -R 'split("\\r\\n")[1:]' | jq '.[] | {name: (. | split(": ")[0]), value: (. | split(": ")[1])}' | jq -cs '.[]'
+```
+```json
+{"name":"Server","value":"squid"}
+{"name":"Mime-Version","value":"1.0"}
+{"name":"Date","value":"Sun, 07 Aug 2022 22:02:51 GMT"}
+{"name":"Content-Type","value":"text/html"}
+{"name":"Content-Length","value":"3131"}
+{"name":"X-Squid-Error","value":"ERR_INVALID_URL 0"}
+{"name":"Vary","value":"Accept-Language"}
+{"name":"Content-Language","value":"en"}
+{"name":"X-Cache","value":"MISS from est"}
+{"name":"Via","value":"1.1 est (squid)"}
+{"name":"Connection","value":"close"}
+```
