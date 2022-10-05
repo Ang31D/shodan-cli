@@ -47,7 +47,7 @@ options:
   -h, --help            show this help message and exit
   --api-info            Output API info and exit, use '-v' for verbose output
   --account-profile     Output Shodan Account Profile info and exit, use '-v' for verbose output
-  -t TARGET             Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets
+  -t TARGET             Host or IP address (or cache index) of the target to lookup. Use '-L' to list indexed cached targets (supports cache index range 'n,n-n,n')
   -c, --cache           Use cached data if exists or re-cache if '-O' is not specified.
   -L, --list-cache      List an overview of cached hosts and exit. Use '-F' to re-cache and '-t' for specific target. Use '-v' to list available ports and hostnames of the target.
                         Use '--host-only' to only show hostnames in verbose mode ('-v'), '--hide-hostname' to hide hostnames in verbose mode ('-v')
