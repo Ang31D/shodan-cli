@@ -131,7 +131,7 @@ options:
 There are 2 modes `list` and `target`.
 
 - `list`   through the `-L` option will list current hosts in the cache
-- `target` through the `-t` option will output the host information and respecive services
+- `target` through the `-t` option will output the host information and respective services
 
 # service2host.py
 
