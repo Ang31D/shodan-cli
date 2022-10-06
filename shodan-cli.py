@@ -789,7 +789,7 @@ class Module_HTTP:
 
 	@property
 	def favicon_hash(self):
-		if 'http' in self._json and 'favicon' in self._json['http'] and 'hash' in self._json['http']['favicon']:
+		if 'http' in self._json and 'favicon' in self._json['http'] and self._json['http']['favicon'] is not None and 'hash' in self._json['http']['favicon']:
 			return self._json['http']['favicon']['hash']
 		return None
 	@property
@@ -1477,6 +1477,58 @@ def out_shodan(shodan):
 	print("Last Update: %s" % host.last_update)
 	print("")
 
+	out_shodan_host_info(shodan, host)
+	if shodan.settings['Out_Host_Only']:
+		return
+
+	print("* Service Overview\n %s" % ('-'*30))
+	# // format service headers
+	print("Scan-Date\tPort      Service\tVersion / Info")
+	print("%s\t%s      %s\t%s" % (("-"*len("Scan-date")), ("-"*len("Port")), ("-"*len("Service")), ("-"*len("Version / Info"))))
+
+	filtered_services = []
+	for service in host.services:
+		# filter in/out based on condition
+		if match_service_on_condition(shodan, service):
+			if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+				#service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+				service_tags = tags_by_match_service_on_conditional_tag_conditions(shodan, service)
+				if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
+					continue
+			filtered_services.append(service)
+		
+	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
+
+	for service in filtered_services: 
+		out_shodan_service_info(shodan, service)
+
+	if len(shodan.settings['Out_Custom_Fields']) > 0 and shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
+		out_custom_fields_as_csv_format = []
+		for service in filtered_services:
+			csv_format = custom_fields_as_csv_format(shodan, service)
+			out_custom_fields_as_csv_format.append(csv_format)
+
+		if len(out_custom_fields_as_csv_format) > 0:
+			csv_file = custom_field_csv_file(shodan)
+			# // write to file if specified
+			if csv_file is not None:
+				#print(custom_fields_as_csv_headers(shodan))
+				print("csv stored in file '%s'" % csv_file)
+				with open(csv_file, "w") as f:
+					f.write('%s\n' % custom_fields_as_csv_headers(shodan))
+				with open(csv_file, "a") as f:
+					f.write('\n'.join(out_custom_fields_as_csv_format))
+					f.write('\n')
+				for csv_format in out_custom_fields_as_csv_format:
+					break
+					print(csv_format)
+			else:
+				# // output if no file is specified
+				print(custom_fields_as_csv_headers(shodan))
+				for csv_line in out_custom_fields_as_csv_format:
+					print(csv_line)
+
+def out_shodan_host_info(shodan, host):
 	print("* Host Overview\n %s" % ('-'*30))
 	print("IP Address: %s" % host.ip)
 	if host.has_os:
@@ -1498,213 +1550,177 @@ def out_shodan(shodan):
 	if host.has_vulns and not shodan.settings['Out_No_Vulns']:
 		print("Vulns: %s" % ', '.join(host.vulns))
 		print("")
-	#
 
 	print("Total Service scans: %s" % len(host.services))
-	
+
 	if shodan.settings['Out_Host_JSON']:
 		host_data = ["[*] %s" % l for l in host.json.split('\n') if len(l) > 0 ]
 		print('\n'.join(host_data))
-	if shodan.settings['Out_Host_Only']:
-		return
 
-	print("* Service Overview\n %s" % ('-'*30))
-	# // format service headers
-	print("Scan-Date\tPort      Service\tVersion / Info")
-	print("%s\t%s      %s\t%s" % (("-"*len("Scan-date")), ("-"*len("Port")), ("-"*len("Service")), ("-"*len("Version / Info"))))
+def out_shodan_service_info(shodan, service):
+	service_tags = []
+	# // skip service if filter out on tags
+	if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+		if shodan.settings["Debug_Mode"]:
+			print("[*] out_shodan() : [fetching tags] _shodan.id == '%s', port: %s" % (service._json["_shodan"]["id"], service._json["port"]))
+		#service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
+		service_tags = tags_by_match_service_on_conditional_tag_conditions(shodan, service)
+		if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
+			return
 
-	filtered_services = []
-	for service in host.services:
-		# filter in/out based on condition
-		if match_service_on_condition(shodan, service):
-			if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
-				#service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
-				service_tags = tags_by_match_service_on_conditional_tag_conditions(shodan, service)
-				if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
-					continue
-			filtered_services.append(service)
-		
-	filtered_services = filter_list_by_head_tail(shodan, filtered_services)
-	out_custom_fields_as_csv_format = []
+	# // output service overview (Scan-Date, Port, Service)
+	fill_prefix = 1
+	service_header = "%s/%s" % (service.port, service.protocol.upper())
+	module_name = service.module_name
+	if '-' in module_name:
+		module_name = module_name.split('-')[0]
+	if len(service_header) < 9:
+		fill_prefix = 9 - len(service_header) + 1
+	service_header = "%s%s%s" % (service_header, (" " * fill_prefix), module_name)
+	if len(service.banner) > 0:
+		if len(module_name) <= 4:
+			service_header = "%s\t" % (service_header)
+		service_header = "%s\t%s" % (service_header, service.banner)
+	elif len(module_name) != len(service.module_name):
+		service_header = "%s\t\t(%s)" % (service_header, service.module_name)
+	print("%s\t%s" % (service.scan_date, service_header))
 
-	for service in filtered_services: 
-		# // output service overview
-		service_tags = []
-		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
-			if shodan.settings["Debug_Mode"]:
-				print("[*] out_shodan() : [fetching tags] _shodan.id == '%s', port: %s" % (service._json["_shodan"]["id"], service._json["port"]))
-			#service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
-			service_tags = tags_by_match_service_on_conditional_tag_conditions(shodan, service)
-			if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
-				continue
+	fill_prefix = "\t\t\t\t\t"
 
-		fill_prefix = 1
-		service_header = "%s/%s" % (service.port, service.protocol.upper())
-		module_name = service.module_name
-		if '-' in module_name:
-			module_name = module_name.split('-')[0]
-		if len(service_header) < 9:
-			fill_prefix = 9 - len(service_header) + 1
-		service_header = "%s%s%s" % (service_header, (" " * fill_prefix), module_name)
-		if len(service.banner) > 0:
-			if len(module_name) <= 4:
-				service_header = "%s\t" % (service_header)
-			service_header = "%s\t%s" % (service_header, service.banner)
-		elif len(module_name) != len(service.module_name):
-			service_header = "%s\t\t(%s)" % (service_header, service.module_name)
-		print("%s\t%s" % (service.scan_date, service_header))
+	# // output - Version / Info overview
+	if shodan.settings['Verbose_Mode']:
+		shodan_header = "%sShodan - ID: %s" % (fill_prefix, service.identifier)
+		if len(service.crawler) > 0:
+			shodan_header = "%s, Crawler: %s" % (shodan_header, service.crawler)
+		if len(service.scan_id) > 0:
+			shodan_header = "%s, Scan Id: %s" % (shodan_header, service.scan_id)
+		print(shodan_header)
+		if len(service.scanned_hostname) > 0:
+			print("%sScanned Host: %s" % (fill_prefix, service.scanned_hostname))
+		print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
+		if service.has_tags:
+			print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
 
-		fill_prefix = "\t\t\t\t\t"
+	if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+		for service_tag in service_tags:
+			print("%s! %s" % (fill_prefix, service_tag))
+		#for threat_name in shodan.settings['Match_On_Named_Custom_Conditions']:
+		#	if match_service_on_named_multi_custom_conditions(shodan, service, threat_name):
+		#		print("%s! %s" % (fill_prefix, threat_name))
 
-		if shodan.settings['Verbose_Mode']:
-			shodan_header = "%sShodan - ID: %s" % (fill_prefix, service.identifier)
-			if len(service.crawler) > 0:
-				shodan_header = "%s, Crawler: %s" % (shodan_header, service.crawler)
-			if len(service.scan_id) > 0:
-				shodan_header = "%s, Scan Id: %s" % (shodan_header, service.scan_id)
-			print(shodan_header)
-			if len(service.scanned_hostname) > 0:
-				print("%sScanned Host: %s" % (fill_prefix, service.scanned_hostname))
-			print("%sPort - First Seen: %s" % (fill_prefix, service.first_seen))
-			if service.has_tags:
-				print("%sTags: %s" % (fill_prefix, ', '.join(service.tags)))
+	if shodan.settings['Verbose_Mode']:
+		print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
+		# v-- [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
+		#if service.product.is_cobaltstrike:
+		#	print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
+		out_shodan_service_details(shodan, service, fill_prefix)
 
-		if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
-			for service_tag in service_tags:
-				print("%s! %s" % (fill_prefix, service_tag))
-			#for threat_name in shodan.settings['Match_On_Named_Custom_Conditions']:
-			#	if match_service_on_named_multi_custom_conditions(shodan, service, threat_name):
-			#		print("%s! %s" % (fill_prefix, threat_name))
-		if shodan.settings['Verbose_Mode']:
-			print("%s* %s %s" % (fill_prefix, "Product", service.product.name))
+	if shodan.settings['Out_Service_Data']:
+		if service.has_data:
+			# clean up empty lines & prefix each line with '[*] '
+			serv_data = ["[*] %s" % l for l in service.data.split('\n') if len(l) > 0 ]
+			print('\n'.join(serv_data))
 
-			# v-- [BUG]: shows for every services, even if the product name isn´t 'Cobalt Strike Beacon'!
-			#if service.product.is_cobaltstrike:
-			#	print("%s* %s" % (fill_prefix, "Hosting 'Cobalt Strike Beacon'"))
-			# // HTTP Module
-			if service.is_web_service:
-				http_module = Module_HTTP(service)
-				# // try to figure out the http-server
-				http_server = ""
-				if http_module.header_exists("Server"):
-					http_server = http_module.get_header("Server")
-				elif http_module.header_exists("server"):
-					http_server = http_module.get_header("server")
-				elif 'ASP.NET' in service.data:
-					http_server = "most likely 'IIS' (found 'ASP.NET' in headers)"
-				if len(http_server) > 0:
-					print("%s# 'Server' header: %s" % (fill_prefix, http_server))
-				# // info from module data
-				module_data = service.get_module_data()
-				if module_data is not None:
-					#if http_module.has_waf:
-					#	print("%sWAF: %s" % (fill_prefix, http_module.waf))
-					# ^-- [BUG] has_waf returns True for None, weird
-					#
-					# v-- this works
-					http_waf = http_module.waf
-					if http_waf:
-						print("%sWAF: %s" % (fill_prefix, http_waf))
-						
-					print('%sWEB Info' % fill_prefix)
-					if 'title' in module_data and module_data['title'] is not None:
-						print("%s   Page Title: %s" % (fill_prefix, module_data['title']))
-					if 'headers_hash' in module_data and module_data['headers_hash'] is not None:
-						print("%s   Headers Hash: %s" % (fill_prefix, module_data['headers_hash']))
-					if 'html_hash' in module_data and module_data['html_hash'] is not None:
-						print("%s   HTML hash: %s" % (fill_prefix, module_data['html_hash']))
-				if http_module.favicon_hash is not None:
-					print("%s   favicon Hash: %s" % (fill_prefix, http_module.favicon_hash))
-				if len(http_module.web_technologies) > 0:
-					print("%s   Web Technologies: %s" % (fill_prefix, ', '.join(http_module.web_technologies)))
-	
-				# // output SSL Certificate information
-				if http_module.is_ssl:
-					if http_module.jarm is not None:
-						print('%sjarm: %s' % (fill_prefix, http_module.jarm))
-					if http_module.ja3s is not None:
-						print('%sja3s: %s' % (fill_prefix, http_module.ja3s))
-					if len(http_module.tls_versions) > 0:
-						print('%sTLS-Versions: %s' % (fill_prefix, ', '.join(http_module.tls_versions)))
-
-					if http_module.has_ssl_cert:
-						print('%sSSL Certificate' % fill_prefix)
-						ssl_cert = http_module.ssl_cert
-						print('%s   Issued: %s, Expires: %s (Expired: %s)' % (fill_prefix, ssl_cert.issued, ssl_cert.expires, ssl_cert.expired))
-						if ssl_cert.fingerprint is not None:
-							print('%s   Fingerprint: %s' % (fill_prefix, ssl_cert.fingerprint))
-						if ssl_cert.serial is not None:
-							print('%s   Serial: %s' % (fill_prefix, ssl_cert.serial))
-						if ssl_cert.subject_cn is not None and len(ssl_cert.subject_cn) > 0:
-							print('%s   Subject.CN: %s' % (fill_prefix, ssl_cert.subject_cn))
-						if ssl_cert.issuer_cn is not None and len(ssl_cert.issuer_cn) > 0:
-							print('%s   Issuer.CN: %s' % (fill_prefix, ssl_cert.issuer_cn))
-
-			if service.is_ssh_service:
-				ssh_module = Module_SSH(service)
-				module_data = service.get_module_data()
-				print('%sSSH Info' % fill_prefix)
-				if ssh_module.type is not None:
-					print('%s   Type: %s' % (fill_prefix, ssh_module.type))
-				if ssh_module.fingerprint is not None:
-					print('%s   Fingerprint: %s' % (fill_prefix, ssh_module.fingerprint))
-				if ssh_module.hassh is not None:
-					print('%s   Hash: %s' % (fill_prefix, ssh_module.hassh))
-				
-
-		if shodan.settings['Out_Service_Data']:
-			if service.has_data:
-				# clean up empty lines & prefix each line with '[*] '
-				serv_data = ["[*] %s" % l for l in service.data.split('\n') if len(l) > 0 ]
-				print('\n'.join(serv_data))
-			
-		if shodan.settings['Out_Service_Module']:
-			if service.has_module_data:
-				serv_data = json.dumps(service.get_module_data(), indent=4).split('\n')
-				# clean up empty lines & prefix each line with '[*] '
-				serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
-				print('\n'.join(serv_data))
-
-		if shodan.settings['Out_Service_JSON']:
-			service_json = service._json
-			if shodan.settings['Out_No_Vulns'] and "vulns" in service_json:
-				service_json.pop("vulns")
-			serv_data = json.dumps(service_json, indent=4).split('\n')
+	if shodan.settings['Out_Service_Module']:
+		if service.has_module_data:
+			serv_data = json.dumps(service.get_module_data(), indent=4).split('\n')
 			# clean up empty lines & prefix each line with '[*] '
 			serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
 			print('\n'.join(serv_data))
 
-		if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
-			print("")
+	if shodan.settings['Out_Service_JSON']:
+		service_json = service._json
+		if shodan.settings['Out_No_Vulns'] and "vulns" in service_json:
+			service_json.pop("vulns")
+		serv_data = json.dumps(service_json, indent=4).split('\n')
+		# clean up empty lines & prefix each line with '[*] '
+		serv_data = ["[*] %s" % l for l in serv_data if len(l) > 0 ]
+		print('\n'.join(serv_data))
 
-		if len(shodan.settings['Out_Custom_Fields']) > 0:
-			if shodan.settings['Out_Custom_Fields_AS_CSV'] is None:
-				show_json_path_as_field(shodan, service)
-			else:
-				csv_format = custom_fields_as_csv_format(shodan, service)
-				out_custom_fields_as_csv_format.append(csv_format)
-				print("%s     ** %s" % (fill_prefix[0:-1], csv_format))
+	if shodan.settings['Out_Service_Data'] or shodan.settings['Out_Service_Module']:
+		print("")
 
-	if shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
-		if len(out_custom_fields_as_csv_format) > 0:
-			csv_file = custom_field_csv_file(shodan)
-			# // write to file if specified
-			if csv_file is not None:
-				#print(custom_fields_as_csv_headers(shodan))
-				print("csv stored in file '%s'" % csv_file)
-				with open(csv_file, "w") as f:
-					f.write('%s\n' % custom_fields_as_csv_headers(shodan))
-				with open(csv_file, "a") as f:
-					f.write('\n'.join(out_custom_fields_as_csv_format))
-					f.write('\n')
-				for csv_format in out_custom_fields_as_csv_format:
-					break
-					print(csv_format)
-			else:
-				# // output if no file is specified
-				print(custom_fields_as_csv_headers(shodan))
-				for csv_line in out_custom_fields_as_csv_format:
-					print(csv_line)
+	if len(shodan.settings['Out_Custom_Fields']) > 0:
+		if shodan.settings['Out_Custom_Fields_AS_CSV'] is None:
+			show_json_path_as_field(shodan, service)
+		else:
+			csv_format = custom_fields_as_csv_format(shodan, service)
+			print("%s     ** %s" % (fill_prefix[0:-1], csv_format))
+
+def out_shodan_service_details(shodan, service, fill_prefix):
+	# // HTTP Module
+	if service.is_web_service:
+		out_shodan_http_service(shodan, service, fill_prefix)
+	elif service.is_ssh_service:
+		out_shodan_ssh_service(shodan, service, fill_prefix)
+def out_shodan_http_service(shodan, service, fill_prefix):
+	http_module = Module_HTTP(service)
+	# // try to figure out the http-server
+	http_server = ""
+	if http_module.header_exists("Server"):
+		http_server = http_module.get_header("Server")
+	elif http_module.header_exists("server"):
+		http_server = http_module.get_header("server")
+	elif 'ASP.NET' in service.data:
+		http_server = "most likely 'IIS' (found 'ASP.NET' in headers)"
+	if len(http_server) > 0:
+		print("%s# 'Server' header: %s" % (fill_prefix, http_server))
+	# // info from module data
+	module_data = service.get_module_data()
+	if module_data is not None:
+		#if http_module.has_waf:
+		#	print("%sWAF: %s" % (fill_prefix, http_module.waf))
+		# ^-- [BUG] has_waf returns True for None, weird
+		#
+		# v-- this works
+		http_waf = http_module.waf
+		if http_waf:
+			print("%sWAF: %s" % (fill_prefix, http_waf))
+						
+			print('%sWEB Info' % fill_prefix)
+			if 'title' in module_data and module_data['title'] is not None:
+				print("%s   Page Title: %s" % (fill_prefix, module_data['title']))
+			if 'headers_hash' in module_data and module_data['headers_hash'] is not None:
+				print("%s   Headers Hash: %s" % (fill_prefix, module_data['headers_hash']))
+			if 'html_hash' in module_data and module_data['html_hash'] is not None:
+				print("%s   HTML hash: %s" % (fill_prefix, module_data['html_hash']))
+		if http_module.favicon_hash is not None:
+			print("%s   favicon Hash: %s" % (fill_prefix, http_module.favicon_hash))
+		if len(http_module.web_technologies) > 0:
+			print("%s   Web Technologies: %s" % (fill_prefix, ', '.join(http_module.web_technologies)))
+	
+		# // output SSL Certificate information
+		if http_module.is_ssl:
+			if http_module.jarm is not None:
+				print('%sjarm: %s' % (fill_prefix, http_module.jarm))
+			if http_module.ja3s is not None:
+				print('%sja3s: %s' % (fill_prefix, http_module.ja3s))
+			if len(http_module.tls_versions) > 0:
+				print('%sTLS-Versions: %s' % (fill_prefix, ', '.join(http_module.tls_versions)))
+
+			if http_module.has_ssl_cert:
+				print('%sSSL Certificate' % fill_prefix)
+				ssl_cert = http_module.ssl_cert
+				print('%s   Issued: %s, Expires: %s (Expired: %s)' % (fill_prefix, ssl_cert.issued, ssl_cert.expires, ssl_cert.expired))
+				if ssl_cert.fingerprint is not None:
+					print('%s   Fingerprint: %s' % (fill_prefix, ssl_cert.fingerprint))
+				if ssl_cert.serial is not None:
+					print('%s   Serial: %s' % (fill_prefix, ssl_cert.serial))
+				if ssl_cert.subject_cn is not None and len(ssl_cert.subject_cn) > 0:
+					print('%s   Subject.CN: %s' % (fill_prefix, ssl_cert.subject_cn))
+				if ssl_cert.issuer_cn is not None and len(ssl_cert.issuer_cn) > 0:
+					print('%s   Issuer.CN: %s' % (fill_prefix, ssl_cert.issuer_cn))
+def out_shodan_ssh_service(shodan, service, fill_prefix):
+	ssh_module = Module_SSH(service)
+
+	module_data = service.get_module_data()
+	print('%sSSH Info' % fill_prefix)
+	if ssh_module.type is not None:
+		print('%s   Type: %s' % (fill_prefix, ssh_module.type))
+	if ssh_module.fingerprint is not None:
+		print('%s   Fingerprint: %s' % (fill_prefix, ssh_module.fingerprint))
+	if ssh_module.hassh is not None:
+		print('%s   Hash: %s' % (fill_prefix, ssh_module.hassh))
 
 def filter_list_by_head_tail(shodan, data_list):
 	head_arg_index = get_arg_index(sys.argv, "--head")
