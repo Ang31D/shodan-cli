@@ -178,9 +178,11 @@ python3 shodan-cli.py -t 20 -mc tags:min-len=1 -cf _shodan.id,ip_str,port,transp
 
 example output
 
+```bash
+python3 shodan-cli.py -t 20 -mc tags:min-len=1 -cf _shodan.id,ip_str,port,transport,product,tags -cf-json  | tail -n 1 | jq -c '.blob |.[]'
 ```
-$ python3 shodan-cli.py -t 20 -mc tags:min-len=1 -cf _shodan.id,ip_str,port,transport,product,tags -cf-json  | tail -n 1 | jq -c '.blob |.[]'
 
+```json
 {"_shodan.id":"57e15f6e-e281-4b63-bfb6-a443e1587414","ip_str":"188.166.148.225","port":22,"product":"OpenSSH","tags":["cloud"],"transport":"tcp"}
 {"_shodan.id":"fe639143-d432-4c3a-a5ed-829219322542","ip_str":"188.166.148.225","port":80,"product":"Apache httpd","tags":["cloud"],"transport":"tcp"}
 {"_shodan.id":"a5138666-8a08-4689-817c-997169dbb60a","ip_str":"188.166.148.225","port":443,"product":"Cobalt Strike Beacon","tags":["cloud"],"transport":"tcp"}
