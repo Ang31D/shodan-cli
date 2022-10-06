@@ -1503,30 +1503,32 @@ def out_shodan(shodan):
 		out_shodan_service_info(shodan, service)
 
 	if len(shodan.settings['Out_Custom_Fields']) > 0 and shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
-		out_custom_fields_as_csv_format = []
-		for service in filtered_services:
-			csv_format = custom_fields_as_csv_format(shodan, service)
-			out_custom_fields_as_csv_format.append(csv_format)
+		service_custom_fields_as_csv(shodan, filtered_services)
 
-		if len(out_custom_fields_as_csv_format) > 0:
-			csv_file = custom_field_csv_file(shodan)
-			# // write to file if specified
-			if csv_file is not None:
-				#print(custom_fields_as_csv_headers(shodan))
-				print("csv stored in file '%s'" % csv_file)
-				with open(csv_file, "w") as f:
-					f.write('%s\n' % custom_fields_as_csv_headers(shodan))
-				with open(csv_file, "a") as f:
-					f.write('\n'.join(out_custom_fields_as_csv_format))
-					f.write('\n')
-				for csv_format in out_custom_fields_as_csv_format:
-					break
-					print(csv_format)
-			else:
-				# // output if no file is specified
-				print(custom_fields_as_csv_headers(shodan))
-				for csv_line in out_custom_fields_as_csv_format:
-					print(csv_line)
+def service_custom_fields_as_csv(shodan, services):
+	out_custom_fields_as_csv_format = []
+	for service in services:
+		csv_format = custom_fields_as_csv_format(shodan, service)
+		out_custom_fields_as_csv_format.append(csv_format)
+
+	if len(out_custom_fields_as_csv_format) > 0:
+		csv_file = custom_field_csv_file(shodan)
+		# // write to file if specified
+		if csv_file is not None:
+			print("csv stored in file '%s'" % csv_file)
+			with open(csv_file, "w") as f:
+				f.write('%s\n' % custom_fields_as_csv_headers(shodan))
+			with open(csv_file, "a") as f:
+				f.write('\n'.join(out_custom_fields_as_csv_format))
+				f.write('\n')
+			for csv_format in out_custom_fields_as_csv_format:
+				break
+				print(csv_format)
+		else:
+			# // output if no file is specified
+			print(custom_fields_as_csv_headers(shodan))
+			for csv_line in out_custom_fields_as_csv_format:
+				print(csv_line)
 
 def out_shodan_host_info(shodan, host):
 	print("* Host Overview\n %s" % ('-'*30))
@@ -1562,7 +1564,7 @@ def out_shodan_service_info(shodan, service):
 	# // skip service if filter out on tags
 	if len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
 		if shodan.settings["Debug_Mode"]:
-			print("[*] out_shodan() : [fetching tags] _shodan.id == '%s', port: %s" % (service._json["_shodan"]["id"], service._json["port"]))
+			print("[*] out_shodan_service_info() : [fetching tags] _shodan.id == '%s', port: %s" % (service._json["_shodan"]["id"], service._json["port"]))
 		#service_tags = tags_by_match_service_on_named_multi_custom_conditions(shodan, service)
 		service_tags = tags_by_match_service_on_conditional_tag_conditions(shodan, service)
 		if len(service_tags) == 0 and shodan.settings['Filter_Out_Non_Matched_Named_Custom_Conditions']:
