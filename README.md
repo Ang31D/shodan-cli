@@ -235,6 +235,9 @@ python3 shodan-cli.py -t 20 -mc tags:min-len=1 -cf _shodan.id,ip_str,port,transp
 ```
 
 ## MISC
+
+`Parse http headers from a host json file`
+
 ```bash
 cat shodan-data/host.91.193.75.239.json | jq -c '.data | .[] | select(._shodan.module | contains("http")) | select(.data | contains("22:02:51")) | .data' | sed 's/\\r\\n\\r\\n//g' | sed 's/^"//g' | sed 's/"$//g'  | jq -c -R 'split("\\r\\n")[1:]' | jq '.[] | {name: (. | split(": ")[0]), value: (. | split(": ")[1])}' | jq -cs '.[]'
 ```
