@@ -165,7 +165,11 @@ python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tag
 python3 shodan-cli.py -L --cache-dir tmp/service_results/shodan-data/ -n -mc tags,tags:not-has=tor  -cf ip_str,tags,hostnames,port,ssl.cert.issuer.CN,ssl.cert.subject.CN
 ```
 
-output service information in json format by defined json nodes
+<br>
+<p>
+
+Output service information in json format by defined json nodes
+
 ```
 python3 shodan-cli.py -t 20 -H -mc tags:min-len=1,cobalt_strike_beacon -cf _shodan.id,cobalt_strike_beacon.x86 -cf-json --tail 4  | tail -n 1 | jq -c '.blob | .[]'  | jq -s '.[0:2]'
 python3 shodan-cli.py -t 20 -mc tags:min-len=1 -cf _shodan.id,ip_str,port,transport,product,tags -cf-json  | tail -n 1 | jq -c '.blob |.[]'
