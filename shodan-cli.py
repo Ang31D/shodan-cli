@@ -1513,7 +1513,6 @@ def out_shodan(shodan):
 	for service in filtered_services: 
 		out_shodan_service_info(shodan, service)
 
-	#if len(shodan.settings['Out_Custom_Fields']) > 0 and shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
 	if len(shodan.settings['Out_Custom_Fields']) > 0:
 		if shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
 			out_service_custom_fields_as_csv(shodan, filtered_services)
@@ -1535,7 +1534,8 @@ def out_service_json_by_custom_fields(shodan, services):
 		
 		custom_json["blob"].append(service_blob)
 
-	print(json_minify_sorted(custom_json))
+	#print(json_minify_sorted(custom_json))
+	print(json_minify(custom_json))
 
 def get_service_json_by_path(shodan, service, json_path):
 	custom_json = []
