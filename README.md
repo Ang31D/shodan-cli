@@ -118,11 +118,12 @@ options:
                         Output field based on condition, see '-mc' for syntax
   --cf-b64              Output field based on condition as base 64 (for safe output)
   -cf-csv <map-format>  Output the result using '-cf' as 'csv' format; format: <json-path>=<as_field_name>[,<json-path>=<as_field_name>,...][:<out_file>]
+  -cf-json              Output the service result defined by '-cf' in flatten 'json' format as '{"blob"}: [<json-blob>]'
   -n, --no-dns          Never do DNS resolution/Always resolve
   --host-only           Only output host information, skip port/service information
   --hide-hostname       Hide hostnames and domains from overview
   --hide-vulns          Hide vulns information from overview and json output
-  --threat-rule <file>  Tags services based on file with named (tag) defined custom conditions to match, <rule_name>;<multi_condition> per line. See '-mc' for syntax
+  --threat-rule <file>  Tags services based on file with named (tag) defined custom conditions to match, same syntax as for '-mc'
   --threat-only         Filter out services not matching the '--threat-rule' match
   -v, --verbose         Enabled verbose mode
   --debug               Enabled debug mode
