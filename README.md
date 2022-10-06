@@ -188,6 +188,50 @@ python3 shodan-cli.py -t 20 -mc tags:min-len=1 -cf _shodan.id,ip_str,port,transp
 {"_shodan.id":"a5138666-8a08-4689-817c-997169dbb60a","ip_str":"188.166.148.225","port":443,"product":"Cobalt Strike Beacon","tags":["cloud"],"transport":"tcp"}
 {"_shodan.id":"9e71e5c4-88e4-4e52-97cc-dbf92cc21191","ip_str":"188.166.148.225","port":50050,"product":null,"tags":["cloud"],"transport":"tcp"}
 ```
+	
+example output 2
+
+```bash
+python3 shodan-cli.py -t 20 -mc tags:min-len=1 -cf _shodan.id,ip_str,port,transport,product,tags,data -cf-json -ms http,https  | tail -n 1 | jq '.blob'
+```
+
+```json
+[
+  {
+    "_shodan.id": "fe639143-d432-4c3a-a5ed-829219322542",
+    "data": "HTTP/1.1 200 OK\r\nDate: Sat, 17 Sep 2022 03:58:48 GMT\r\nServer: Apache/2.4.54 (Debian)\r\nLast-Modified: Sun, 30 Jan 2022 20:50:15 GMT\r\nETag: \"29cd-5d6d2d09dd9b0\"\r\nAccept-Ranges: bytes\r\nContent-Length: 10701\r\nVary: Accept-Encoding\r\nContent-Type: text/html\r\n\r\n",
+    "ip_str": "188.166.148.225",
+    "port": 80,
+    "product": "Apache httpd",
+    "tags": [
+      "cloud"
+    ],
+    "transport": "tcp"
+  },
+  {
+    "_shodan.id": "a5138666-8a08-4689-817c-997169dbb60a",
+    "data": "HTTP/1.1 404 Not Found\r\nDate: Sat, 17 Sep 2022 04:45:00 GMT\r\nContent-Type: text/plain\r\nContent-Length: 0\r\n\r\n\nCobalt Strike Beacon:\n  x86:\n    beacon_type: HTTPS\n    dns-beacon.strategy_fail_seconds: -1\n    dns-beacon.strategy_fail_x: -1\n    dns-beacon.strategy_rotate_seconds: -1\n    http-get.client:\n      Accept: */*\n      Host: www.amazon.com\n      session-token=\n      skin=noskin;\n      csm-hit=s-24KU11BB82RZSYGJ3BDK|1419899012996\n      Cookie\n    http-get.uri: remote.nedsecures.co.za,/s/ref=nb_sb_noss_1/167-3294888-0262949/field-keywords=books\n    http-get.verb: GET\n    http-post.client:\n      Accept: */*\n      Content-Type: text/xml\n      X-Requested-With: XMLHttpRequest\n      Host: www.amazon.com\n      sz=160x600\n      oe=oe=ISO-8859-1;\n      sn\n      s=3717\n      dc_ref=http%3A%2F%2Fwww.amazon.com\n    http-post.uri: /N4215/adj/amzn.us.sr.aps\n    http-post.verb: POST\n    maxgetsize: 1048576\n    port: 443\n    post-ex.spawnto_x64: %windir%\\sysnative\\rundll32.exe\n    post-ex.spawnto_x86: %windir%\\syswow64\\rundll32.exe\n    process-inject.execute:\n      CreateThread\n      SetThreadContext\n      CreateRemoteThread\n      RtlCreateUserThread\n    process-inject.startrwx: 64\n    process-inject.stub: 04e0a11be59147a8d73d2b3e9fea832c\n    process-inject.userwx: 64\n    proxy.behavior: 2 (Use IE settings)\n    server.publickey_md5: 108413980eba83aa8da7c9af94eb7e4e\n    sleeptime: 5000\n    useragent_header: Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\n    uses_cookies: 1\n    watermark: 1996647057\n  x64:\n    beacon_type: HTTPS\n    dns-beacon.strategy_fail_seconds: -1\n    dns-beacon.strategy_fail_x: -1\n    dns-beacon.strategy_rotate_seconds: -1\n    http-get.client:\n      Accept: */*\n      Host: www.amazon.com\n      session-token=\n      skin=noskin;\n      csm-hit=s-24KU11BB82RZSYGJ3BDK|1419899012996\n      Cookie\n    http-get.uri: remote.nedsecures.co.za,/s/ref=nb_sb_noss_1/167-3294888-0262949/field-keywords=books\n    http-get.verb: GET\n    http-post.client:\n      Accept: */*\n      Content-Type: text/xml\n      X-Requested-With: XMLHttpRequest\n      Host: www.amazon.com\n      sz=160x600\n      oe=oe=ISO-8859-1;\n      sn\n      s=3717\n      dc_ref=http%3A%2F%2Fwww.amazon.com\n    http-post.uri: /N4215/adj/amzn.us.sr.aps\n    http-post.verb: POST\n    maxgetsize: 1048576\n    port: 443\n    post-ex.spawnto_x64: %windir%\\sysnative\\rundll32.exe\n    post-ex.spawnto_x86: %windir%\\syswow64\\rundll32.exe\n    process-inject.execute:\n      CreateThread\n      SetThreadContext\n      CreateRemoteThread\n      RtlCreateUserThread\n    process-inject.startrwx: 64\n    process-inject.stub: 04e0a11be59147a8d73d2b3e9fea832c\n    process-inject.userwx: 64\n    proxy.behavior: 2 (Use IE settings)\n    server.publickey_md5: 108413980eba83aa8da7c9af94eb7e4e\n    sleeptime: 5000\n    useragent_header: Mozilla/5.0 (Windows NT 6.1; WOW64; Trident/7.0; rv:11.0) like Gecko\n    uses_cookies: 1\n    watermark: 1996647057\n",
+    "ip_str": "188.166.148.225",
+    "port": 443,
+    "product": "Cobalt Strike Beacon",
+    "tags": [
+      "cloud"
+    ],
+    "transport": "tcp"
+  },
+  {
+    "_shodan.id": "9e71e5c4-88e4-4e52-97cc-dbf92cc21191",
+    "data": "\u0015\u0003\u0003\u0000\u0002\u0002\n",
+    "ip_str": "188.166.148.225",
+    "port": 50050,
+    "product": null,
+    "tags": [
+      "cloud"
+    ],
+    "transport": "tcp"
+  }
+]
+```
 
 ## MISC
 ```bash
