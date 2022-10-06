@@ -28,12 +28,22 @@ def json_prettify(json_data):
 	if "str" == json_type:
 		return json.dumps(json.loads(json_data), indent=4)
 	return json_data
+
+#data = json.loads('{"foo":1, "bar": 2}', object_pairs_hook=OrderedDict)
 def json_minify(json_data):
 	json_type = type(json_data).__name__
 	if "dict" == json_type:
 		return json.dumps(json_data)
 	if "str" == json_type:
 		return json.dumps(json.loads(json_data))
+	return json_data
+def json_minify_sorted(json_data):
+	json_type = type(json_data).__name__
+	if "dict" == json_type:
+		#return json.dumps(json_data)
+		return json.dumps(json_data, sort_keys=True)
+	if "str" == json_type:
+		return json.dumps(json.loads(json_data, object_pairs_hook=OrderedDict), sort_keys=True)
 	return json_data
 
 class ShodanAPI:
@@ -131,6 +141,7 @@ class ShodanSettings:
 		self.settings['Out_Service_JSON'] = False
 		self.settings['Out_Custom_Fields'] = []
 		self.settings['Out_Custom_Fields_AS_CSV'] = None
+		self.settings['Out_Custom_Fields_AS_JSON'] = args.out_custom_fields_as_json
 		self.settings['Out_Custom_Fields_AS_Base64'] = args.out_custom_fields_as_base64
 		
 
@@ -1502,10 +1513,43 @@ def out_shodan(shodan):
 	for service in filtered_services: 
 		out_shodan_service_info(shodan, service)
 
-	if len(shodan.settings['Out_Custom_Fields']) > 0 and shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
-		service_custom_fields_as_csv(shodan, filtered_services)
+	#if len(shodan.settings['Out_Custom_Fields']) > 0 and shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
+	if len(shodan.settings['Out_Custom_Fields']) > 0:
+		if shodan.settings['Out_Custom_Fields_AS_CSV'] is not None:
+			out_service_custom_fields_as_csv(shodan, filtered_services)
+		if shodan.settings['Out_Custom_Fields_AS_JSON']:
+			out_service_json_by_custom_fields(shodan, filtered_services)
 
-def service_custom_fields_as_csv(shodan, services):
+def out_service_json_by_custom_fields(shodan, services):
+	custom_json = {"blob": []}
+
+	path_blob = OrderedDict()
+	for service in services:
+		service_blob = {}
+		for json_path in shodan.settings['Out_Custom_Fields']:
+			path_exists, path_value = get_json_path(service._json, json_path)
+			if json_path not in service_blob:
+				service_blob[json_path] = None
+			if path_exists:
+				service_blob[json_path] = path_value
+		
+		custom_json["blob"].append(service_blob)
+
+	print(json_minify_sorted(custom_json))
+
+def get_service_json_by_path(shodan, service, json_path):
+	custom_json = []
+	if not shodan.settings['Out_Custom_Fields_AS_JSON']:
+		return custom_json
+
+	for json_path in shodan.settings['Out_Custom_Fields']:
+		path_exists, path_value = get_json_path(service._json, json_path)
+		if path_exists:
+			custom_json.append({json_path: path_value})
+
+	return custom_json
+
+def out_service_custom_fields_as_csv(shodan, services):
 	out_custom_fields_as_csv_format = []
 	for service in services:
 		csv_format = custom_fields_as_csv_format(shodan, service)
@@ -2713,6 +2757,7 @@ if __name__ == '__main__':
 	parser.add_argument('-cf', '--custom-field', dest='out_custom_fields', metavar="<condition>", help="Output field based on condition, see '-mc' for syntax")
 	parser.add_argument('--cf-b64', dest='out_custom_fields_as_base64', action='store_true', help="Output field based on condition as base 64 (for safe output)")
 	parser.add_argument('-cf-csv', dest='out_custom_fields_as_csv', metavar="<map-format>", help="Output the result using '-cf' as 'csv' format; format: <json-path>=<as_field_name>[,<json-path>=<as_field_name>,...][:<out_file>]")
+	parser.add_argument('-cf-json', dest='out_custom_fields_as_json', action='store_true', help="Output the service result defined by '-cf' in flatten 'json' format as '{\"blob\"}: [<json-blob>]'")
 	parser.add_argument('-n', '--no-dns', dest='no_dns_lookup', action='store_true', help="Never do DNS resolution/Always resolve")
 	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information")
 	parser.add_argument('--hide-hostname', dest='out_no_hostname', action='store_true', help="Hide hostnames and domains from overview")
