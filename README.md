@@ -30,9 +30,13 @@ Expand arguments for threat rules
 	'data:regex=\u0015\u0003\u0003\u0000\u0002\u0002\n'
 * Potential cobaltstrike (http-headers)
 	'data:regex=HTTP\/[0-9].[0-9] 404 Not Found\r\n,data:regex=Content-Type. text\/plain\r\n,data:regex=Content-Length. 0\r\n'
-* Possible 'Tor' by known jarm hash
-	'ssl.jarm=2ad2ad16d2ad2ad00042d42d000000332dc9cd7d90589195193c8bb05d84fa,hash=0'
-* Tag: Tor
+* Metasploit - Self-Signed Certificate
+	'ssl.cert.issuer.CN=MetasploitSelfSignedCA'
+* Rapid7 - Issued Certificate
+	'ssl.cert.issuer.O=Rapid7'
+* Tor indicator (by known jarm hash)
+	'tags:not-has=tor,ssl.jarm=2ad2ad16d2ad2ad00042d42d000000332dc9cd7d90589195193c8bb05d84fa,hash=0'
+* Tor tag
 	'tags:has=tor'
 ```
 
