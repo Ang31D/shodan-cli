@@ -494,7 +494,6 @@ class Port_Service:
 	def __init__(self, json_data):
 		self._json = json_data
 		self.port = int(self._json['port'])
-		#self.protocol = self._json['transport']
 		self.protocol = '?' if 'transport' not in self._json else self._json['transport']
 		self.timestamp = '' if 'timestamp' not in self._json else self._json['timestamp']
 		self.scan_date = ''
@@ -503,6 +502,11 @@ class Port_Service:
 			self.scan_date = datetime.strptime(self.timestamp, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d")
 		self.product = Service_Product(self._json)
 		self.first_seen = ''
+		# // add parsed 'headers' to the 'http.headers' element
+		if self.is_web_service and "http" in self._json:
+			http_module = Module_HTTP(self)
+			if http_module.has_headers:
+				self._json["http"]["headers"] = http_module.headers
 
 	@property
 	def identifier(self):
@@ -1837,7 +1841,7 @@ def list_cache(shodan, target=None):
 
 	# // output info of specified target
 	#if target is not None:
-	if target is not None and ("-" not in target or "," not in target):
+	if target is not None and ("-" not in target and "," not in target):
 		print(headers)
 		if shodan._target_is_cache_index(target):
 			target = shodan._get_target_by_cache_index(target)
@@ -1845,7 +1849,8 @@ def list_cache(shodan, target=None):
 		else:
 			cache_file = shodan._get_out_path(shodan._target_as_out_file(target))
 		if not os.path.isfile(cache_file):
-			return
+			shodan.cache_host_ip(target, shodan.settings['Include_History'])
+			#return
 
 		out_data = "%s" % target
 
@@ -1948,6 +1953,9 @@ def list_cache(shodan, target=None):
 				filter_on_target_range.append(shodan._target_as_out_file(target))
 			else:
 				target = target_range
+				# // re-cache before stats out
+				if shodan.settings['Flush_Cache']:
+					shodan.cache_host_ip(target, shodan.settings['Include_History'])
 				filter_on_target_range.append(shodan._target_as_out_file(target))
 
 	dir_list = os.listdir(shodan.settings['Cache_Dir'])
@@ -2037,6 +2045,26 @@ def list_cache(shodan, target=None):
 			for field in custom_fields:
 				if len(field_data) > 0:
 					field_data = "%s, " % field_data
+				if 'list' == type(custom_fields[field]).__name__ and len(custom_fields[field]) > 0:
+					if 'int' == type(custom_fields[field][0]).__name__:
+						custom_fields[field] = [str(int) for int in custom_fields[field]] # convert int to str
+					# expand nested list items
+					elif 'list' == type(custom_fields[field][0]).__name__:
+						field_items = []
+						for item_index in range(len(custom_fields[field])):
+							if 'list' == type(custom_fields[field][item_index]).__name__:
+								if custom_fields[field][item_index] is None or len(custom_fields[field][item_index]) == 0:
+									#custom_fields[field][item_index] = "null"
+									continue
+								field_items.append(', '.join(custom_fields[field][item_index]))
+								custom_fields[field][item_index] = ', '.join(custom_fields[field][item_index])
+							else:
+								field_items.append(custom_fields[field][item_index])
+						custom_fields[field] = field_items
+					else:
+						for item_index in range(len(custom_fields[field])):
+							if custom_fields[field][item_index] is None:
+								custom_fields[field][item_index] = "null"
 				field_data = "%s[%s]: '%s'" % (field_data, field, ', '.join(custom_fields[field]))
 			if len(field_data) > 0:
 				if len(info_data) > 0:
@@ -2072,6 +2100,7 @@ def get_cache_host_custom_fields_by_service(shodan, service):
 	for custom in shodan.settings['Out_Custom_Fields']:
 		if not match_on_json_path_condition(service._json, custom, shodan.settings['Debug_Mode']):
 			continue
+		#print("\tget_cache_host_custom_fields_by_service() : custom '%s'" % custom)
 		
 		path = set_default_json_path_condition(custom).split(':')[0].strip()
 		path_exists, path_value = get_json_path(service._json, path)
@@ -2082,20 +2111,15 @@ def get_cache_host_custom_fields_by_service(shodan, service):
 
 			if "dict" == type(path_value).__name__:
 				path_value = json_minify(path_value)
-			#if "list" == type(path_value).__name__:
-			#	if len(path_value) > 0 and "str" == type(path_value[0]).__name__:
-			#		path_value = ','.join(path_value)
 
 			if "str" == type(path_value).__name__:
 				if " " in path_value or "," in path_value:
 					path_value = '"%s"' % path_value
 			
-			#if "list" == type(path_value).__name__ and len(path_value) > 0 and type(path_value[0]).__name__ in ["str", "int"]:
-			if "list" == type(path_value).__name__:
-				if len(path_value) > 0:
-					for item in path_value:
-						if item not in fields[path]:
-							fields[path].append(item)
+			if "list" == type(path_value).__name__ and len(path_value) > 0:
+				for item in path_value:
+					if item not in fields[path]:
+						fields[path].append(item)
 			else:
 				if path_value not in fields[path]:
 					fields[path].append(path_value)
@@ -2351,10 +2375,12 @@ def main(args):
 	#host = "119.45.94.71"
 
 	shodan = ShodanCli(args)
-	if shodan.settings['Target'] is not None:
+	#if shodan.settings['Target'] is not None:
+	if shodan.settings['Target'] is not None and not args.list_cache:
 		# // resolve host/domain to ip address
 		#if not shodan._target_is_ip_address(args.target) and not shodan._target_is_cache_index(args.target):
 		if shodan._target_is_domain_host(shodan.settings['Target']):
+			# // using the domain_info api costs 1 credit by query
 			"""
 			data = shodan.api.domain_info(args.target)
 			if shodan.api.has_error:
@@ -2369,7 +2395,6 @@ def main(args):
 			if shodan.settings['Verbose_Mode']:
 				print(json.dumps(data, indent=4))
 			"""
-			# // using the domain_info api costs 1 credit by query
 			# // lets use "free" resolve solution instead
 			host_ip = host_to_ip(shodan.settings['Target'])
 			if host_ip is not None:
@@ -2444,7 +2469,9 @@ def main(args):
 		cache_target_list(shodan, shodan.settings['Target'])
 		return
 
-	if not shodan.cache_exists:
+	#if not shodan.cache_exists:
+	#if not os.path.isfile(shodan._get_out_path(shodan._target_as_out_file(shodan.settings['Target']))):
+	if not shodan._target_is_cached(shodan.settings['Target']):
 		print("[*] Retrieving information for target '%s'..." % shodan.settings['Target'])
 		shodan.cache_host()
 	if shodan.get_cache() is None:
