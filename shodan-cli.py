@@ -819,6 +819,14 @@ class Module_HTTP:
 		if 'http' in self._json and "components" in self._json['http']:
 			for technology in self._json['http']['components']:
 				categories = self._json['http']['components'][technology]['categories']
+				category_list = []
+				skip_default_append = False
+				for category in categories:
+					if "dict" == type(category).__name__:
+						result.append('%s (%s)' % (technology, json_minify(categories)))
+						skip_default_append = True
+				if skip_default_append:
+					continue
 				#result.append('"%s": "%s"' % (technology, ', '.join(categories)))
 				result.append('%s (%s)' % (technology, ', '.join(categories)))
 		return result
