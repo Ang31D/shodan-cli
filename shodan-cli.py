@@ -924,6 +924,8 @@ def filter_out_service(shodan, service):
 
 def get_json_path(json_dict, path):
 	json_data = json_dict
+	if json_data is None:
+		return False, None
 
 	fields = path.split('.')
 	# // override if '|' is used as path separator instead
@@ -933,6 +935,8 @@ def get_json_path(json_dict, path):
 
 	for i in range(len(fields)):
 		field = fields[i]
+		if json_data is None:
+			continue
 		field_exists = field in json_data
 
 		if not field_exists:
