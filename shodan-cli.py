@@ -127,6 +127,7 @@ class ShodanSettings:
 		self.settings['No_DNS_Lookup'] = args.no_dns_lookup
 		self.settings['Out_No_Hostname'] = args.out_no_hostname
 		self.settings['Out_No_Vulns'] = args.out_no_vulns
+		self.settings['Out_No_CacheTime'] = args.out_no_cache_time
 
 		self.settings['Verbose_Mode'] = False
 		self.settings['Out_Host_Only'] = False
@@ -328,7 +329,7 @@ class ShodanCli:
 			return True
 		return False
 	def _target_is_domain_host(self, target):
-		if '.' in target and not self._target_is_ip_address(target):
+		if '.' in target and not self._target_is_ip_address(target) and "," not in target:
 			return True
 		return False
 	def _target_is_cached(self, target):
@@ -339,6 +340,16 @@ class ShodanCli:
 			if target == self._out_file_as_target(file):
 				return True
 		return False
+	def _target_is_range(self, target):
+		if target is not None:
+			if self._target_is_cache_index(target):
+				return False
+			if self._target_is_domain_host(target):
+				return False
+			if ("-" in target or "," in target):
+				return True
+		return False
+
 	def _get_target_by_cache_index(self, cache_index):
 		target = None
 		if not self._target_is_cache_index(cache_index):
@@ -1820,6 +1831,7 @@ class Shodan_Cache:
 
 	def __init__(self, shodan):
 		self._shodan = shodan
+		self.settings = self._shodan.settings
 		self._cache_dir = self._shodan.settings['Cache_Dir']
 		self._target = None
 
@@ -1831,29 +1843,110 @@ class Shodan_Cache:
 		pass
 
 	def list_cache(self):
-		dir_list = os.listdir(shodan.settings['Cache_Dir'])
+		dir_list = os.listdir(self.location)
 		cache_index = -1
 		out_cache_list = []
 		for file in dir_list:
 			cache_index += 1
 			if not file.startswith("host.") or not file.endswith(".json"):
 				continue
-			target = shodan._out_file_as_target(file)
+			target = self._host_cache_filename_as_target(file)
+
+	def _is_host_cache_filename(self, file):
+		if file.startswith("host.") and file.endswith(".json"):
+			return True
+		return False
+	def _target_as_out_file(self, target):
+		return "host.%s.json" % target
+	def _host_cache_filename_as_target(self, file):
+		if self._is_host_cache_filename(file):
+			# strip of '^host.' and '.json$'
+			target = '.'.join(file.split('.')[1:])
+			target = '.'.join(target.split('.')[:-1])
+			return target
+		return ''
+	def _get_out_path(self, file):
+		return os.path.join(self.location, file)
+
+	def _get_json_from_cached_file(self, file):
+		if os.path.isfile(file):
+			with open(file, 'r') as f:
+				return json.load(f)
+		return None
+	def _get_target_cache_path(self, target):
+		return self._get_out_path(self._target_as_out_file(target))
+	def _target_is_cached(self, target):
+		cache_file = self._get_target_cache_path(target)
+		if os.path.isfile(cache_file):
+			return True
+		return False
+
+	def _get_target_by_cache_index(self, cache_index):
+		pass
+
+		target = None
+		if not self._shodan._target_is_cache_index(cache_index):
+			return target
+
+		dir_list = os.listdir(self.location)
+		if int(cache_index) < 0 or int(cache_index) >= len(dir_list):
+			return target
+
+		cache_filename = dir_list[int(cache_index)]
+		#target = self._out_file_as_target(cache_filename)
+		target = self._host_cache_filename_as_target(cache_filename)
+		return target
+
+	def get_host_from_file(self, file):
+		if not self._is_host_cache_filename(file):
+			return None
+
+		target = self._host_cache_filename_as_target(file)
+		if len(target) == 0:
+			return None
+		return self.get_host_by_target(target)
+	def get_host_by_target(self, target):
+		# // re-cache host before fetching data
+		if self.settings['Flush_Cache']:
+			self._shodan.cache_host_ip(target, self.settings['Include_History'])
+
+		if not self._target_is_cached(target):
+			return None
+
+		cache_file = self._get_target_cache_path(target)
+		host_json = self._get_json_from_cached_file(cache_file)
+		host = Shodan_Host(self.settings, host_json, self.settings['Include_History'])
+		return host
 
 def list_cache(shodan, target=None):
-	headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
-	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
-		headers = "%s\t\t\t\t\t%s" % (headers, "Info")
-	headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
-	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
-		headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
+	shodan_cache = Shodan_Cache(shodan)
+
+	#headers = "Target\t\tShodan Last Update\tCache Date\t\tCached Since"
+	headers = "Target\t\tShodan Last Update"
+	if not shodan.settings['Out_No_CacheTime']:
+		headers = "%s\tCache Date\t\tCached Since" % headers
+		headers = "%s\t\t\t\t" % (headers)
+	#if shodan.settings['Verbose_Mode'] or len(shodan.settings['Match_On_Named_Custom_Conditions']) > 0:
+	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Out_Custom_Fields']) > 0:
+		#headers = "%s\t\t\t\t\t%s" % (headers, "Info")
+		headers = "%s\t%s" % (headers, "Info")
+	#headers = "%s\n%s\t\t%s\t%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")), ("-"*len("Cache Date")), ("-"*len("Cached Since")))
+	headers = "%s\n%s\t\t%s" % (headers, ("-"*len("Target")), ("-"*len("Shodan Last Update")))
+	if not shodan.settings['Out_No_CacheTime']:
+		headers = "%s\t%s\t\t%s" % (headers, ("-"*len("Cache Date")), ("-"*len("Cached Since")))
+	if shodan.settings['Verbose_Mode'] or len(shodan.settings['Out_Custom_Fields']) > 0:
+		#headers = "%s\t\t\t\t\t%s" % (headers, ("-"*len("Info")))
+		if not shodan.settings['Out_No_CacheTime']:
+			headers = "%s\t\t\t\t" % (headers)
+		headers = "%s\t%s" % (headers, ("-"*len("Info")))
 
 	if shodan.settings['Flush_Cache']:
 		print("[*] Flushing cache before listing...")
 
 	# // output info of specified target
 	#if target is not None:
-	if target is not None and ("-" not in target and "," not in target):
+	#if target is not None and ("-" not in target and "," not in target):
+	if target is not None and not shodan._target_is_range(target):
 		print(headers)
 		if shodan._target_is_cache_index(target):
 			target = shodan._get_target_by_cache_index(target)
@@ -1873,23 +1966,24 @@ def list_cache(shodan, target=None):
 		host = Shodan_Host(shodan.settings, shodan.get_cache_by_file(cache_file), False)
 		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 		out_data = "%s\t%s" % (out_data, last_update)
-		c_time = os.path.getctime(cache_file)
-		cached_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
-		out_data = "%s\t%s" % (out_data, cached_date)
-
-		end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
-		cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
-		cached_delta = relativedelta(end_date, cache_date)
-		cache_delta = relativedelta(end_date, cache_date)
-		out_data = "%s\t" % out_data
-		out_data = "%s%s years" % (out_data, cached_delta.years)
-		out_data = "%s, %s months" % (out_data, cached_delta.months)
-		out_data = "%s, %s days" % (out_data, cached_delta.days)
-		out_data = "%s, %sh, %s min" % (out_data, cached_delta.hours, cached_delta.minutes)
-		if cached_delta.minutes == 0:
-			out_data = "%s, %s sec" % (out_data, cached_delta.seconds)
-		else:
+		if not shodan.settings['Out_No_CacheTime']:
+			c_time = os.path.getctime(cache_file)
+			cached_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+			out_data = "%s\t%s" % (out_data, cached_date)
+			#
+			end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
+			cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
+			cached_delta = relativedelta(end_date, cache_date)
+			cache_delta = relativedelta(end_date, cache_date)
 			out_data = "%s\t" % out_data
+			out_data = "%s%s years" % (out_data, cached_delta.years)
+			out_data = "%s, %s months" % (out_data, cached_delta.months)
+			out_data = "%s, %s days" % (out_data, cached_delta.days)
+			out_data = "%s, %sh, %s min" % (out_data, cached_delta.hours, cached_delta.minutes)
+			if cached_delta.minutes == 0:
+				out_data = "%s, %s sec" % (out_data, cached_delta.seconds)
+			else:
+				out_data = "%s\t" % out_data
 
 		out_info = ""
 		if shodan.settings['Verbose_Mode']:
@@ -1947,6 +2041,7 @@ def list_cache(shodan, target=None):
 	headers = '\n'.join(header_data)
 	print(headers)
 
+	# // filter the target list based on specified target ranged (if any)
 	filter_on_target_range = []
 	if target is not None and ("-" in target or "," in target):
 		target_ranges = target
@@ -1966,55 +2061,63 @@ def list_cache(shodan, target=None):
 			else:
 				target = target_range
 				# // re-cache before stats out
-				if shodan.settings['Flush_Cache']:
-					shodan.cache_host_ip(target, shodan.settings['Include_History'])
+				#if shodan.settings['Flush_Cache']:
+				#	shodan.cache_host_ip(target, shodan.settings['Include_History'])
+				# ^-- managed through shodan_cache
 				filter_on_target_range.append(shodan._target_as_out_file(target))
 
-	dir_list = os.listdir(shodan.settings['Cache_Dir'])
+	#dir_list = os.listdir(shodan.settings['Cache_Dir'])
+	dir_list = os.listdir(shodan_cache.location)
 	cache_index = -1
 	out_cache_list = []
 	for file in dir_list:
 		cache_index += 1
-		if not file.startswith("host.") or not file.endswith(".json"):
+		#if not file.startswith("host.") or not file.endswith(".json"):
+		if not shodan_cache._is_host_cache_filename(file):
+
 			continue
 		if len(filter_on_target_range) > 0 and file not in filter_on_target_range:
 			continue
+
 		target = shodan._out_file_as_target(file)
 		out_data = "%s\t%s" % (cache_index, target)
 
 		# // re-cache before stats out
-		if shodan.settings['Flush_Cache']:
-			shodan.cache_host_ip(target, shodan.settings['Include_History'])
+		#if shodan.settings['Flush_Cache']:
+		#	shodan.cache_host_ip(target, shodan.settings['Include_History'])
+		# ^-- managed through shodan_cache
 
-		cache_file = shodan._get_out_path(file)
-		host = Shodan_Host(shodan.settings, shodan.get_cache_by_file(cache_file), False)
+		host = shodan_cache.get_host_by_target(target)
 
-		# // 
 		if not match_on_cached_host(shodan, host):
 			continue
+
 		last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 		#if len(host.last_update) > 0:
 		#	last_update = datetime.strptime(host.last_update, '%Y-%m-%dT%H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
 		#last_update = 'xxxx-xx-xx xx:xx:xx'
 		out_data = "%s\t%s" % (out_data, last_update)
-		c_time = os.path.getctime(cache_file)
-		cached_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
-		out_data = "%s\t%s" % (out_data, cached_date)
 
-		end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
-		cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
-		cached_delta = relativedelta(end_date, cache_date)
-		cache_delta = relativedelta(end_date, cache_date)
-		out_data = "%s\t" % out_data
-		out_data = "%s%s years" % (out_data, cached_delta.years)
-		out_data = "%s, %s months" % (out_data, cached_delta.months)
-		out_data = "%s, %s days" % (out_data, cached_delta.days)
-		out_data = "%s, %sh, %s min" % (out_data, cached_delta.hours, cached_delta.minutes)
-
-		if cached_delta.minutes == 0:
-			out_data = "%s, %s sec" % (out_data, cached_delta.seconds)
-		else:
+		if not shodan.settings['Out_No_CacheTime']:
+			#c_time = os.path.getctime(cache_file)
+			c_time = os.path.getctime(shodan_cache._get_target_cache_path(target))
+			cached_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f').strftime("%Y-%m-%d %H:%M:%S")
+			out_data = "%s\t%s" % (out_data, cached_date)
+			
+			end_date = datetime.strptime(str(datetime.now()), '%Y-%m-%d %H:%M:%S.%f')
+			cache_date = datetime.strptime(str(datetime.fromtimestamp(c_time)), '%Y-%m-%d %H:%M:%S.%f')
+			cached_delta = relativedelta(end_date, cache_date)
+			cache_delta = relativedelta(end_date, cache_date)
 			out_data = "%s\t" % out_data
+			out_data = "%s%s years" % (out_data, cached_delta.years)
+			out_data = "%s, %s months" % (out_data, cached_delta.months)
+			out_data = "%s, %s days" % (out_data, cached_delta.days)
+			out_data = "%s, %sh, %s min" % (out_data, cached_delta.hours, cached_delta.minutes)
+			
+			if cached_delta.minutes == 0:
+				out_data = "%s, %s sec" % (out_data, cached_delta.seconds)
+			else:
+				out_data = "%s\t" % out_data
 
 		info_data = ""
 		if shodan.settings['Verbose_Mode']:
@@ -2089,9 +2192,11 @@ def list_cache(shodan, target=None):
 			out_data = "%s%s" % (out_data, info_data)
 
 		out_cache_list.append(out_data)
+
 	out_cache_list = filter_list_by_head_tail(shodan, out_cache_list)
 	for out_data in out_cache_list:
 		print(out_data)
+
 def get_cache_host_custom_fields_by_host_services(shodan, host):
 	host_fields = OrderedDict()
 	for service in host.services:
@@ -2801,6 +2906,7 @@ if __name__ == '__main__':
 	parser.add_argument('--host-only', dest='out_host_only', action='store_true', help="Only output host information, skip port/service information")
 	parser.add_argument('--hide-hostname', dest='out_no_hostname', action='store_true', help="Hide hostnames and domains from overview")
 	parser.add_argument('--hide-vulns', dest='out_no_vulns', action='store_true', help="Hide vulns information from overview and json output")
+	parser.add_argument('--no-cache-time', dest='out_no_cache_time', action='store_true', help="Hide cache time when using '-L'")
 	parser.add_argument('--threat-rule', dest='match_on_named_custom_condition_file', metavar="<file>", help="Tags services based on file with named (tag) defined custom conditions to match, same syntax as for '-mc'")
 	parser.add_argument('--threat-only', dest='filter_out_non_matched_named_custom_conditions', action='store_true', help="Filter out services not matching the '--threat-rule' match")
 	parser.add_argument('-v', '--verbose', dest='verbose_mode', action='store_true', help="Enabled verbose mode")
